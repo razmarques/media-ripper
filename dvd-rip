@@ -1,0 +1,64 @@
+#!/bin/bash
+# Host-side wrapper: runs ONE dvd-ripper.sh subcommand in a throwaway podman
+# container. This is the only command the Claude workflow is allowed to run.
+#
+#   dvd-rip --build                 build the image from ./Containerfile
+#   dvd-rip <rip|info|scan|probe|encode> [dvd-ripper.sh options...]
+#
+# Run it from inside a movie/season folder under $LIBRARY_ROOT; relative paths
+# (./output/...) resolve there. Only $LIBRARY_ROOT is mounted into the
+# container, with no network access.
+#
+# Environment:
+#   LIBRARY_ROOT  library folder to mount (default: $HOME/Videos)
+#   DVD_DEVICE    optical drive for rip/info (default: /dev/sr0)
+#   DVD_IMAGE     image to run (default: localhost/media-ripper:latest)
+
+set -euo pipefail
+
+IMAGE="${DVD_IMAGE:-localhost/media-ripper:latest}"
+LIBRARY_ROOT="${LIBRARY_ROOT:-$HOME/Videos}"
+DVD_DEVICE="${DVD_DEVICE:-/dev/sr0}"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+die() { echo "dvd-rip: $*" >&2; exit 1; }
+
+command -v podman >/dev/null || die "podman not found"
+
+if [[ "${1:-}" == "--build" ]]; then
+    exec podman build -t "$IMAGE" -f "$SELF_DIR/Containerfile" "$SELF_DIR"
+fi
+
+CMD="${1:-}"
+case "$CMD" in
+    rip|info|scan|probe|encode) shift ;;
+    *) die "usage: dvd-rip --build | dvd-rip <rip|info|scan|probe|encode> [options]" ;;
+esac
+
+[[ -d "$LIBRARY_ROOT" ]] || die "LIBRARY_ROOT not found: $LIBRARY_ROOT"
+ROOT="$(cd "$LIBRARY_ROOT" && pwd -P)"
+CWD="$(pwd -P)"
+case "$CWD" in
+    "$ROOT"|"$ROOT"/*) REL="${CWD#"$ROOT"}" ;;
+    *) die "must run from inside $ROOT (currently in $CWD)" ;;
+esac
+
+# Reject paths that would escape the mounted library from within the container.
+for arg in "$@"; do
+    case "$arg" in
+        /*|..|../*|*/..|*/../*) die "absolute or '..' paths are not allowed: $arg" ;;
+    esac
+done
+
+podman image exists "$IMAGE" || die "image $IMAGE not found; run: dvd-rip --build"
+
+ARGS=(run --rm --network=none --userns=keep-id
+      -v "$ROOT":/library:Z -w "/library$REL")
+
+# Only the commands that touch the physical drive get the device.
+if [[ "$CMD" == "rip" || "$CMD" == "info" ]]; then
+    [[ -e "$DVD_DEVICE" ]] || die "optical device not found: $DVD_DEVICE"
+    ARGS+=(--device="$DVD_DEVICE" --group-add keep-groups)
+fi
+
+exec podman "${ARGS[@]}" "$IMAGE" "$CMD" "$@"

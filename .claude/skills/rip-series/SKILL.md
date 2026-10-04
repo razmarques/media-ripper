@@ -2,10 +2,10 @@
 name: rip-series
 description: >-
   Rip a TV-series DVD into the Plex library end to end using
-  ~/Videos/dvd-ripper.sh — find the episode list for the season, rip all titles,
-  classify episodes vs junk titles by duration, batch-encode keeping European
-  Portuguese + English audio and subtitles, then rename each encoded file to
-  the episode it matches. Use when the user wants to rip a TV series / a
+  dvd-rip — find the episode list for the season, rip all titles, classify
+  episodes vs junk titles by duration, match each episode to its title, then
+  encode each episode (keeping European Portuguese + English audio and
+  subtitles) straight to its Plex filename. Use when the user wants to rip a TV series / a
   season disc / multiple episodes from a DVD, or mentions dvd-ripper for a
   show rather than a movie. For single-feature movie discs, use rip-film
   instead.
@@ -13,17 +13,19 @@ description: >-
 
 # rip-series
 
-Automates the TV-series DVD → Plex workflow around `~/Videos/dvd-ripper.sh`'s
-(not on `$PATH` — always invoke by this path) `batch` command. Must run
-inside the distrobox that has `makemkvcon`,
-`HandBrakeCLI`, and `mediainfo`. Companion to the `rip-film` skill, which
-handles single-feature movie discs — use this one instead whenever a disc
-holds multiple episodes.
+Automates the TV-series DVD → Plex workflow around `dvd-rip`, a host wrapper
+(on `$PATH`) that runs one `dvd-ripper.sh` subcommand (`rip`, `info`, `scan`,
+`probe`, `encode`) in a throwaway podman container. **`dvd-rip` is the only
+tool you use for ripping, probing and encoding** — never call `makemkvcon`,
+`HandBrakeCLI`, `mediainfo`, `podman` or `docker` directly (they are denied).
+Companion to the `rip-film` skill, which handles single-feature movie discs —
+use this one instead whenever a disc holds multiple episodes.
 
-The library root is `/home/rodolfo/Videos/`. Layout:
-`Show Name (Year)/Season NN/` is the season folder — raw MakeMKV rips stay in
-`./output/` inside it; encoded episodes land directly in the season folder
-(the parent of `output/`) as `Show Name - SXXEYY - Episode Title.mkv`.
+The library root is `$LIBRARY_ROOT` (default `~/Videos/`); `dvd-rip` only works
+from inside it. Layout: `Show Name (Year)/Season NN/` is the season folder —
+raw MakeMKV rips stay in `./output/` inside it; encoded episodes land directly
+in the season folder (the parent of `output/`) as
+`Show Name - SXXEYY - Episode Title.mkv`.
 
 ## Standing preferences
 
@@ -34,10 +36,11 @@ The library root is `/home/rodolfo/Videos/`. Layout:
 - **Keep the raw `./output/` rips** after encoding. Never delete them.
 - Encode settings are fixed by the script (x264 RF21, lossless audio copy,
   chapter markers) — don't try to change them.
-- `dvd-ripper.sh batch` applies **one** audio/subtitle track selection to
-  every file in the input directory. This is safe because all titles ripped
-  from the same disc are authored identically — verify that assumption in
-  step 6 rather than taking it for granted.
+- Each episode is encoded with its own `dvd-rip encode` call, but this skill
+  picks **one** audio/subtitle track selection and reuses it for every
+  episode. That is safe because all titles ripped from the same disc are
+  authored identically — verify that assumption in step 6 rather than taking
+  it for granted.
 
 ## Procedure
 
@@ -55,11 +58,10 @@ The library root is `/home/rodolfo/Videos/`. Layout:
 
 ### 2. Preflight
 
-- `command -v makemkvcon HandBrakeCLI mediainfo` — if any is missing, stop and
-  tell the user to start Claude inside the distrobox that has them. Never try
-  to install anything.
-- `makemkvcon -r info disc:0` to confirm a disc is actually readable before
-  the long rip. On failure, surface the output and stop.
+- `dvd-rip info` to confirm a disc is actually readable before the long rip.
+  On failure (including "image not found" — tell the user to run
+  `dvd-rip --build`), surface the output and stop. Never try to install
+  anything.
 - Keep this output around for step 5. Each line like
   `MSG:3028,...,"Title #N was added (X cell(s), duration)"` gives that
   title's **cell count** — a free second signal for classifying episodes vs
@@ -75,16 +77,16 @@ The library root is `/home/rodolfo/Videos/`. Layout:
   Plex/ext4 dislike: `:` `/` `?` `*`.
 - Season folder inside it: `Season <NN>`, zero-padded two digits (Plex
   convention), e.g. `Season 01`.
-- Case-insensitively look for an existing show folder under
-  `/home/rodolfo/Videos/`. Reuse it if found, otherwise `mkdir` it; do the
-  same for the season folder inside it.
+- Case-insensitively look for an existing show folder under `$LIBRARY_ROOT`
+  (default `~/Videos/`). Reuse it if found, otherwise `mkdir` it; do the same
+  for the season folder inside it.
 - `cd` into the season folder. Show the user the resolved absolute path, then
   proceed straight to ripping — no confirmation needed once metadata and the
   folder are in place.
 
 ### 4. Rip
 
-- From inside the season folder: `~/Videos/dvd-ripper.sh rip`
+- From inside the season folder: `dvd-rip rip`
 - It writes `./output/<label>_t<NN>.mkv`, one file per DVD title (episodes
   and, usually, non-episode junk titles mixed together).
 - When done, report `ls -lh output/`. If zero `.mkv` files were produced the
@@ -92,11 +94,10 @@ The library root is `/home/rodolfo/Videos/`. Layout:
 
 ### 5. Classify ripped titles: episode vs junk
 
-- For every `output/*.mkv`, collect duration and size:
+- Collect duration and size for every ripped file in one call:
   ```
-  mediainfo --Output='General;%Duration%' <file>   # milliseconds
+  dvd-rip probe --input-dir ./output   # file|duration_ms|size_bytes
   ```
-  plus `ls -l` size.
 - DVD title sets for series almost always include non-episode junk (menus,
   trailers, recaps, promos) alongside the real episodes. Compare each
   duration against the known episode runtimes from step 1, **tolerance ±8%**
@@ -118,12 +119,14 @@ The library root is `/home/rodolfo/Videos/`. Layout:
 
 ### 6. Pick tracks — European Portuguese + English
 
-Source of truth is `mediainfo`. Its per-kind `%StreamKindPos%` is exactly the
-1-based HandBrake `--audio` / `--subtitle` index.
+Source of truth is `dvd-rip probe`. Its `index` column (mediainfo's per-kind
+`%StreamKindPos%`) is exactly the 1-based HandBrake `--audio` / `--subtitle`
+index.
 
 ```
-mediainfo --Output='Audio;%StreamKindPos%|%Language%|%Language/String%|%Channel(s)%|%Title%\n' <file>
-mediainfo --Output='Text;%StreamKindPos%|%Language%|%Language/String%|%Format%|%Forced%\n' <file>
+dvd-rip probe --input ./output/<file>
+# audio:    index|lang|lang_name|channels|title
+# subtitle: index|lang|lang_name|format|forced
 ```
 
 - Run this against one episode-candidate file, then spot-check a second one.
@@ -144,62 +147,56 @@ mediainfo --Output='Text;%StreamKindPos%|%Language%|%Language/String%|%Format%|%
 
 ### 7. Scan (saved artifact)
 
-- `~/Videos/dvd-ripper.sh scan --input ./output/<one episode file> --save`
+- `dvd-rip scan --input ./output/<one episode file> --save`
 - This writes `./output/<file>_scan.txt`. Keep it for the record only — same
   as the movie workflow, don't parse it to choose tracks.
 
-### 8. Batch encode
+### 8. Map titles to episodes (before encoding)
 
-From inside the season folder:
+- Take the files classified as episode candidates in step 5, sorted by their
+  title order (the DVD authoring order, i.e. filename order), and match them
+  1:1, in order, against the step-1 episode list sorted by episode number.
+  Cross-check duration against any known per-episode runtime as a sanity
+  check.
+- Build the target name for each: `Show Name - SXXEYY - Episode Title`
+  (e.g. `Shaun the Sheep - S01E01 - Off the Baa!`). Strip `:` `/` `?` `*`.
+- Print the file → episode table. If the order/duration cross-check conflicts
+  for any file (e.g. an episode's duration doesn't fit where the order says
+  it should go), stop and ask rather than guessing at episode identity —
+  encoding is slow, so settle identity first.
+
+### 9. Encode each episode
+
+For every matched episode, from inside the season folder:
 
 ```
-~/Videos/dvd-ripper.sh batch --input-dir ./output --output-dir . \
+dvd-rip encode --name "<Show Name> - SXXEYY - <Episode Title>" \
+    --input ./output/<file> \
     --audio <list> [--subtitle <list>]
 ```
 
-- `--output-dir .` writes encoded files into the season folder itself (the
-  parent of `./output/`).
-- This encodes **every** ripped title, junk included — `batch` has no
-  filtering flag, and this workflow does not modify the script. Junk titles
-  are usually short, so this is cheap; they're handled in step 10.
-- Output filenames mirror the raw basenames (e.g. `title_t00.mkv`).
+- Quote `--name` — it has spaces. The file lands in the season folder (the
+  current directory) already named correctly; there is no rename step.
+- Junk titles are **not** encoded; they stay untouched in `./output/`.
+- Run the episodes one after another (the encode of each is long); if one
+  fails, report it and stop rather than skipping silently.
 
-### 9. Rename using the episode map
+### 10. Verify and report
 
-- Restrict attention to the batch-encoded files whose raw counterpart was
-  classified as an episode candidate in step 5.
-- Sort those by their original title order (the DVD authoring order), and
-  match them 1:1, in order, against the step-1 episode list sorted by episode
-  number. Cross-check duration as a sanity check.
-- Rename each matched file to the Plex convention:
-  `Show Name - SXXEYY - Episode Title.mkv` (e.g.
-  `Shaun the Sheep - S01E01 - Off the Baa!.mkv`), in the season folder.
-- If the order/duration cross-check conflicts for any file (e.g. an episode's
-  duration doesn't fit where the order says it should go), stop and ask
-  rather than guessing at episode identity.
-
-### 10. Leftover junk outputs
-
-- Any batch-encoded file that didn't match an episode (from a junk raw title)
-  is a wasted encode of non-episode footage. List these for the user and ask
-  before deleting them — never delete without confirmation. The raw junk
-  titles stay untouched in `./output/` regardless.
-
-### 11. Verify and report
-
-- `mediainfo` each renamed episode file: confirm its duration matches its
-  source, and that the expected audio/subtitle tracks are present in
+- `dvd-rip probe --input` each encoded episode: confirm its duration matches
+  its source, and that the expected audio/subtitle tracks are present in
   Portuguese-then-English order.
-- Report the final season folder listing. **Leave `./output/` in place.**
+- Report the final season folder listing (`ls`). **Leave `./output/` in
+  place.**
 
 ## Notes
 
 - Disc is always `disc:0` (single drive assumed).
-- `~/Videos/dvd-ripper.sh` always uses HandBrake title `-t 1` — correct,
-  because MakeMKV puts each DVD title in its own file.
+- `dvd-rip` always uses HandBrake title `-t 1` — correct, because MakeMKV puts
+  each DVD title in its own file.
 - Audio is never re-encoded; the script forces `--aencoder copy` per track.
-- HandBrake track numbers == `mediainfo` per-kind `%StreamKindPos%`.
+- HandBrake track numbers == the `index` column of `dvd-rip probe`.
 - Duration tolerance is ±8% to absorb PAL speedup.
-- A season spanning multiple discs means repeating steps 2–11 once per disc,
+- A season spanning multiple discs means repeating steps 2–10 once per disc,
   reusing the same show/season folder and the same episode list from step 1
   (just a different slice of it per disc).

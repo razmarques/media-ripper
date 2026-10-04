@@ -7,6 +7,8 @@
 #
 # Commands:
 #   rip    - Rip all titles from DVD losslessly via MakeMKV
+#   info   - List the disc's titles (with cell counts) via MakeMKV, no ripping
+#   probe  - Report duration, size and audio/subtitle tracks of ripped MKV(s)
 #   scan   - Scan a MakeMKV-produced MKV with HandBrake to identify tracks
 #   encode - Encode a scanned MKV to H.264 with selected tracks
 #
@@ -17,10 +19,11 @@
 # Subtitles are passed through HandBrake directly.
 #
 # Dependencies:
-#   makemkvcon   - MakeMKV CLI (rip stage)
+#   makemkvcon   - MakeMKV CLI (rip and info stages)
 #                  https://www.makemkv.com
 #   HandBrakeCLI - HandBrake CLI (scan and encode stages)
 #                  https://handbrake.fr
+#   mediainfo    - MediaInfo CLI (probe stage)
 #
 # ============================================================================
 
@@ -34,6 +37,7 @@ INPUT_FILE=""
 AUDIO_TRACKS=""
 SUBTITLE_TRACKS=""
 SAVE_SCAN=""
+INPUT_DIR=""
 
 # ============================================================================
 # Helper Functions
@@ -45,8 +49,17 @@ Usage: $0 <command> [options]
 
 Commands:
   rip     Rip all titles from DVD losslessly using MakeMKV
+  info    List the disc's titles (incl. cell counts) without ripping
+  probe   Show duration, size and audio/subtitle tracks of ripped MKV(s)
   scan    Scan a MKV file with HandBrake to identify track numbers
   encode  Encode a MKV file to H.264 with selected tracks
+
+Options (for probe; one of):
+  -i, --input <file>         Full report for one MKV: duration, size, and the
+                             audio/subtitle tables (1-based track numbers,
+                             identical to HandBrake's --audio/--subtitle)
+  -d, --input-dir <dir>      One summary line per *.mkv in <dir>:
+                             file|duration_ms|size_bytes
 
 Options (for scan):
   -i, --input <file>         MKV file to scan
@@ -70,10 +83,17 @@ Examples:
   # Step 1: Rip all titles from DVD
   $0 rip
 
-  # Step 2: Scan the main title MKV to identify tracks
+  # Optional: list the disc's titles before ripping
+  $0 info
+
+  # Step 2: Probe ripped files (durations, tracks)
+  $0 probe --input-dir output
+  $0 probe --input output/title_t00.mkv
+
+  # Step 3: Scan the main title MKV to identify tracks
   $0 scan --input output/title_t00.mkv
 
-  # Step 3: Encode with selected tracks
+  # Step 4: Encode with selected tracks
   $0 encode --name FindingNemo --input title_t00.mkv \\
       --audio 1,2 --subtitle 1,11
 
@@ -90,6 +110,8 @@ parse_flags() {
                 MOVIE_NAME="$2"; shift 2 ;;
             -i|--input)
                 INPUT_FILE="$2"; shift 2 ;;
+            -d|--input-dir)
+                INPUT_DIR="$2"; shift 2 ;;
             -a|--audio)
                 AUDIO_TRACKS="$2"; shift 2 ;;
             -s|--subtitle)
@@ -152,6 +174,52 @@ rip_disc() {
     echo ""
     echo "Next step: scan the main title to identify track numbers."
     echo "  $0 scan --input $OUTPUT_DIR/<title_file>.mkv"
+}
+
+info_disc() {
+    echo "=== Disc info (MakeMKV) ==="
+    echo ""
+    # Lines like MSG:3028,...,"Title #N was added (X cell(s), duration)" give
+    # each title's cell count, in the same order rip writes *_t00.mkv, *_t01.mkv...
+    makemkvcon -r info disc:0
+}
+
+probe_mkv() {
+    if [ -n "$INPUT_FILE" ] && [ -n "$INPUT_DIR" ]; then
+        echo "Error: use either --input or --input-dir, not both"
+        exit 1
+    fi
+
+    if [ -n "$INPUT_DIR" ]; then
+        if [ ! -d "$INPUT_DIR" ]; then
+            echo "Error: Input directory not found: $INPUT_DIR"
+            exit 1
+        fi
+        echo "file|duration_ms|size_bytes"
+        local F
+        for F in "$INPUT_DIR"/*.mkv; do
+            [ -f "$F" ] || continue
+            echo "$(basename "$F")|$(mediainfo --Output='General;%Duration%' "$F")|$(stat -c %s "$F")"
+        done
+        return
+    fi
+
+    require_var "--input or --input-dir" "$INPUT_FILE"
+    if [ ! -f "$INPUT_FILE" ]; then
+        echo "Error: Input file not found: $INPUT_FILE"
+        exit 1
+    fi
+
+    echo "file: $INPUT_FILE"
+    echo "duration_ms: $(mediainfo --Output='General;%Duration%' "$INPUT_FILE")"
+    echo "size_bytes: $(stat -c %s "$INPUT_FILE")"
+    echo "resolution: $(mediainfo --Output='Video;%Width%x%Height%' "$INPUT_FILE")"
+    echo ""
+    echo "audio: index|lang|lang_name|channels|title"
+    mediainfo --Output='Audio;%StreamKindPos%|%Language%|%Language/String%|%Channel(s)%|%Title%\n' "$INPUT_FILE"
+    echo ""
+    echo "subtitle: index|lang|lang_name|format|forced"
+    mediainfo --Output='Text;%StreamKindPos%|%Language%|%Language/String%|%Format%|%Forced%\n' "$INPUT_FILE"
 }
 
 scan_mkv() {
@@ -266,6 +334,16 @@ case "$COMMAND" in
     rip)
         parse_flags "$@"
         rip_disc
+        ;;
+
+    info)
+        parse_flags "$@"
+        info_disc
+        ;;
+
+    probe)
+        parse_flags "$@"
+        probe_mkv
         ;;
 
     scan)

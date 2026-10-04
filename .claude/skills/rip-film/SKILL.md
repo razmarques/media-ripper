@@ -2,7 +2,7 @@
 name: rip-film
 description: >-
   Rip a single-feature movie DVD into the Plex library end to end using
-  ~/Videos/dvd-ripper.sh — find the release year, make a Plex folder, rip,
+  dvd-rip — find the release year, make a Plex folder, rip,
   identify the real feature file by duration, then scan and encode keeping
   European Portuguese + English audio and subtitles. Use when the user wants
   to rip a DVD / rip this disc / rip a movie, or mentions dvd-ripper for a
@@ -12,14 +12,16 @@ description: >-
 
 # rip-film
 
-Automates the movie DVD → Plex workflow around `~/Videos/dvd-ripper.sh` (not
-on `$PATH` — always invoke by this path). Must run
-inside the distrobox that has `makemkvcon`, `HandBrakeCLI`, and `mediainfo`.
+Automates the movie DVD → Plex workflow around `dvd-rip`, a host wrapper
+(on `$PATH`) that runs one `dvd-ripper.sh` subcommand (`rip`, `info`, `scan`,
+`probe`, `encode`) in a throwaway podman container. **`dvd-rip` is the only
+tool you use for ripping, probing and encoding** — never call `makemkvcon`,
+`HandBrakeCLI`, `mediainfo`, `podman` or `docker` directly (they are denied).
 For TV-series discs (one disc = many episodes), use the `rip-series` skill
-instead — it drives the same script's `batch` command and handles
-episode-list lookup and renaming.
+instead — it handles episode-list lookup and per-episode encoding.
 
-The library root is `/home/rodolfo/Videos/`. One folder per movie named
+The library root is `$LIBRARY_ROOT` (default `~/Videos/`); `dvd-rip` only works
+from inside it. One folder per movie named
 `Movie Title (Year)`; raw MakeMKV rips stay in `./output/`; the encoded file
 lands in the movie folder as `Movie Title (Year).mkv`.
 
@@ -48,17 +50,17 @@ lands in the movie folder as `Movie Title (Year).mkv`.
 
 ### 2. Preflight
 
-- `command -v makemkvcon HandBrakeCLI mediainfo` — if any is missing, stop and
-  tell the user to start Claude inside the distrobox that has them. Never try to
-  install anything.
-- `makemkvcon -r info disc:0` to confirm a disc is actually readable before the
-  long rip. On failure, surface the output and stop.
+- `dvd-rip info` to confirm a disc is actually readable before the long rip.
+  On failure (including "image not found" — tell the user to run
+  `dvd-rip --build`), surface the output and stop. Never try to install
+  anything.
 
 ### 3. Folder
 
 - Target folder name: `<Title> (<Year>)`. Replace or strip characters Plex/ext4
   dislike: `:` `/` `?` `*`.
-- Case-insensitively look for an existing folder under `/home/rodolfo/Videos/`.
+- Case-insensitively look for an existing folder under `$LIBRARY_ROOT`
+  (default `~/Videos/`).
   Reuse it if found, otherwise `mkdir` it.
 - `cd` into it. Show the user the resolved absolute path, then proceed
   straight to ripping — no confirmation needed once metadata and the folder
@@ -66,18 +68,18 @@ lands in the movie folder as `Movie Title (Year).mkv`.
 
 ### 4. Rip
 
-- From inside the movie folder: `~/Videos/dvd-ripper.sh rip`
+- From inside the movie folder: `dvd-rip rip`
 - It writes `./output/<label>_t<NN>.mkv`, one file per DVD title.
 - When done, report `ls -lh output/`. If zero `.mkv` files were produced the rip
   failed — surface the MakeMKV output and stop.
 
 ### 5. Identify the feature file (be certain, not fast)
 
-- For every `output/*.mkv`, collect duration and size:
+- Collect duration and size for every ripped file in one call:
   ```
-  mediainfo --Output='General;%Duration%' <file>   # milliseconds
+  dvd-rip probe --input-dir ./output   # file|duration_ms|size_bytes
   ```
-  plus `ls -l` size and, if useful, `%Width%x%Height%`.
+  (`dvd-rip probe --input <file>` also reports the resolution.)
 - Compare each file's duration to the official runtime from step 1.
   **Tolerance ±8%** — DVD rips run a few % short (PAL 25 fps speedup is 4.3%),
   plus listing variance.
@@ -93,19 +95,21 @@ lands in the movie folder as `Movie Title (Year).mkv`.
 
 ### 6. Scan (saved artifact)
 
-- `~/Videos/dvd-ripper.sh scan --input ./output/<file> --save`
+- `dvd-rip scan --input ./output/<file> --save`
 - This writes `./output/<file>_scan.txt`. Keep it for the record; do **not**
   parse it to choose tracks (HandBrake shows localized language names and its
   subtitle lines have no ISO codes). Use step 7 instead.
 
 ### 7. Pick tracks — European Portuguese + English
 
-Source of truth is `mediainfo`. Its per-kind `%StreamKindPos%` is exactly the
-1-based HandBrake `--audio` / `--subtitle` index.
+Source of truth is `dvd-rip probe`. Its `index` column (mediainfo's per-kind
+`%StreamKindPos%`) is exactly the 1-based HandBrake `--audio` / `--subtitle`
+index.
 
 ```
-mediainfo --Output='Audio;%StreamKindPos%|%Language%|%Language/String%|%Channel(s)%|%Title%\n' <file>
-mediainfo --Output='Text;%StreamKindPos%|%Language%|%Language/String%|%Format%|%Forced%\n' <file>
+dvd-rip probe --input ./output/<file>
+# audio:    index|lang|lang_name|channels|title
+# subtitle: index|lang|lang_name|format|forced
 ```
 
 - **Portuguese** = language `pt` or `pt-PT`. If a track reports `pt-BR` / `pob`
@@ -126,7 +130,7 @@ mediainfo --Output='Text;%StreamKindPos%|%Language%|%Language/String%|%Format%|%
 From inside the movie folder:
 
 ```
-~/Videos/dvd-ripper.sh encode --name "<Title> (<Year>)" \
+dvd-rip encode --name "<Title> (<Year>)" \
     --input ./output/<file> \
     --audio <list> [--subtitle <list>]
 ```
@@ -137,7 +141,7 @@ From inside the movie folder:
 
 ### 9. Verify and report
 
-- Confirm the output file exists. `mediainfo` it.
+- Confirm the output file exists (`ls`) and `dvd-rip probe --input` it.
 - Check its duration ≈ the source file's, and that the expected audio/subtitle
   tracks are present in Portuguese-then-English order.
 - Report the final path and size. **Leave `./output/` in place.**
@@ -145,8 +149,8 @@ From inside the movie folder:
 ## Notes
 
 - Disc is always `disc:0` (single drive assumed).
-- `~/Videos/dvd-ripper.sh` always uses HandBrake title `-t 1` — correct, because MakeMKV
+- `dvd-rip` always uses HandBrake title `-t 1` — correct, because MakeMKV
   puts each DVD title in its own file.
 - Audio is never re-encoded; the script forces `--aencoder copy` per track.
-- HandBrake track numbers == `mediainfo` per-kind `%StreamKindPos%`.
+- HandBrake track numbers == the `index` column of `dvd-rip probe`.
 - Duration tolerance is ±8% to absorb PAL speedup.

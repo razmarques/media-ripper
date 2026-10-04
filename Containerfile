@@ -1,33 +1,28 @@
 # Self-contained image for running dvd-ripper.sh: the makemkv PPA and the
 # DVD/Blu-ray ripping & transcoding toolchain, plus the script itself baked
-# in as the entrypoint. Each dvd-ripper.sh command (rip/scan/encode) runs in
+# in as the entrypoint. Each dvd-ripper.sh command (rip/info/scan/probe/encode) runs in
 # its own short-lived container -- spawn, run, collect output, exit.
 #
-# Build:
-#   podman build -t localhost/media-ripper:latest -f Containerfile .
-#
-# Run a command (from inside the movie/season folder, so relative paths like
-# ./output line up):
-#   podman run --rm -v "$PWD":/work -w /work --device=/dev/sr0 \
-#       localhost/media-ripper:latest rip
-#
-#   podman run --rm -v "$PWD":/work -w /work \
-#       localhost/media-ripper:latest scan --input ./output/title_t00.mkv
-#
-#   podman run --rm -v "$PWD":/work -w /work \
-#       localhost/media-ripper:latest encode --name "Movie Title (Year)" \
-#       --input ./output/title_t00.mkv --audio 1,2 --subtitle 1,11
-#
-# --device=/dev/sr0 is only needed for `rip` (the only command touching the
-# physical drive); omit it for `scan`/`encode`.
+# Don't call this image directly -- use the host wrapper, which mounts only the
+# library folder, drops the network, and passes the optical drive only to
+# rip/info:
+#   ./dvd-rip --build                 # build this image
+#   ./dvd-rip rip                     # run from inside a movie/season folder
+#   ./dvd-rip scan --input ./output/title_t00.mkv
+#   ./dvd-rip encode --name "Movie Title (Year)" --input ./output/title_t00.mkv \
+#       --audio 1,2 --subtitle 1,11
 #
 # To troubleshoot a failure interactively, override the entrypoint:
-#   podman run --rm -it -v "$PWD":/work -w /work --device=/dev/sr0 \
-#       --entrypoint bash localhost/media-ripper:latest
+#   podman run --rm -it --userns=keep-id -v "$LIBRARY_ROOT":/library:Z \
+#       -w /library --device=/dev/sr0 --entrypoint bash localhost/media-ripper:latest
 
 FROM docker.io/library/ubuntu:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# The wrapper runs the container as the host user's uid (--userns=keep-id),
+# which has no home directory here; MakeMKV/HandBrake need a writable HOME.
+ENV HOME=/tmp
 
 # makemkv PPA (heyarje/makemkv-beta). Fetched live via add-apt-repository so
 # the signing key is always current, rather than a hardcoded stale copy.

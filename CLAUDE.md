@@ -20,21 +20,32 @@ This directory is a Plex library of DVD rips: movies and TV series.
 
 ## Ripping a DVD (movie)
 
-Use the **`rip-film` skill**. It drives `~/Videos/dvd-ripper.sh` through
-`rip` → `scan` → `encode` and handles year lookup, folder creation, feature-file
-identification, and track selection.
+Use the **`rip-film` skill**. It drives `dvd-rip` through
+`info` → `rip` → `probe` → `scan` → `encode` and handles year lookup, folder
+creation, feature-file identification, and track selection.
 
-Must run inside the distrobox that has `makemkvcon`, `HandBrakeCLI`, and
-`mediainfo`.
+## Execution environment
+
+All ripping/encoding runs inside a podman container, via the host wrapper
+`dvd-rip` (repo root; put it on `$PATH`, e.g. symlink into `~/.local/bin`).
+It runs exactly one `dvd-ripper.sh` subcommand per throwaway container, mounts
+only `$LIBRARY_ROOT` (default `~/Videos`), has no network, and passes the optical
+drive only to `rip`/`info`. Build the image once with `dvd-rip --build`.
+
+`dvd-rip` is the **only** tool Claude uses for this work. `makemkvcon`,
+`HandBrakeCLI`, `mediainfo`, `podman`, `docker` and `distrobox` are denied in
+`.claude/settings.json` — never call them directly. Run `dvd-rip` from inside
+the movie/season folder; it refuses to run outside `$LIBRARY_ROOT`.
 
 ## Ripping a DVD (TV series)
 
-Use the **`rip-series` skill**. It drives `~/Videos/dvd-ripper.sh` through
-`rip` → `batch` and handles episode-list lookup (season/episode/title),
-folder creation, episode-vs-junk classification by duration, track selection,
-and renaming each encoded file to its matched episode.
+Use the **`rip-series` skill**. It drives `dvd-rip` through
+`info` → `rip` → `probe` → `encode` (once per episode) and handles episode-list
+lookup (season/episode/title), folder creation, episode-vs-junk classification
+by duration, track selection, and encoding each episode straight to its
+`Show Name - SXXEYY - Episode Title.mkv` name. Junk titles are never encoded.
 
-Same distrobox requirement as above.
+Same execution environment as above.
 
 ## Standing preferences
 
@@ -48,32 +59,42 @@ Same distrobox requirement as above.
 
 ## Identifying the feature file
 
-Never trust "largest file" alone. Match `mediainfo` duration against the
+Never trust "largest file" alone. Match the `dvd-rip probe` duration against the
 official runtime, tolerance **±8%** (PAL rips run ~4% short). Watch for
 multi-disc sets (longest title well under the known runtime).
 
-## `dvd-ripper.sh` quick reference
+## `dvd-rip` quick reference
 
-Lives at `~/Videos/dvd-ripper.sh` (not on `$PATH` — always invoke by that
-path, since these commands run from inside a movie/season subfolder).
+`dvd-rip` (host wrapper, on `$PATH`) forwards to `dvd-ripper.sh` inside the
+container. Run it from inside the movie/season folder.
 
 ```
-~/Videos/dvd-ripper.sh rip
+dvd-rip --build
+    # build the container image from ./Containerfile
+
+dvd-rip info
+    # list the disc's titles (incl. cell counts) without ripping
+
+dvd-rip rip
     # no flags; rips all titles of disc:0 to ./output/*.mkv (MakeMKV names them)
 
-~/Videos/dvd-ripper.sh scan --input ./output/<file>.mkv [--save]
+dvd-rip probe --input-dir ./output
+    # one line per file: file|duration_ms|size_bytes
+
+dvd-rip probe --input ./output/<file>.mkv
+    # duration, size, resolution, plus audio/subtitle tables
+    # (index|lang|lang_name|channels|title and index|lang|lang_name|format|forced)
+
+dvd-rip scan --input ./output/<file>.mkv [--save]
     # HandBrake track scan; --save writes ./output/<file>_scan.txt
 
-~/Videos/dvd-ripper.sh encode --name "Movie Title (Year)" --input ./output/<file>.mkv \
+dvd-rip encode --name "Movie Title (Year)" --input ./output/<file>.mkv \
     --audio <i,j> [--subtitle <i,j>]
-    # comma-separated 1-based track numbers; writes "<name>.mkv" to CWD
-
-~/Videos/dvd-ripper.sh batch --input-dir ./output --output-dir . \
-    --audio <i,j> [--subtitle <i,j>]
-    # TV series: same track selection applied to every file in --input-dir;
-    # output keeps each file's original basename, --output-dir . writes into
-    # the season folder (parent of output/) — rip-series renames after this
+    # comma-separated 1-based track numbers; writes "<name>.mkv" to CWD.
+    # TV series: call once per episode with
+    # --name "Show Name - SXXEYY - Episode Title" from the season folder.
 ```
 
-Track numbers are 1-based, comma-separated, and equal `mediainfo`'s per-kind
-`%StreamKindPos%` (verified — HandBrake and mediainfo order tracks identically).
+Track numbers are 1-based, comma-separated, and equal the `index` column of
+`dvd-rip probe` (mediainfo's per-kind `%StreamKindPos%`; HandBrake and
+mediainfo order tracks identically).

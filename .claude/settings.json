@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./dvd-rip:*)",
+      "Bash(dvd-rip:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": [
+      "Bash(makemkvcon:*)",
+      "Bash(HandBrakeCLI:*)",
+      "Bash(mediainfo:*)",
+      "Bash(podman:*)",
+      "Bash(docker:*)",
+      "Bash(distrobox:*)"
+    ]
+  }
+}
