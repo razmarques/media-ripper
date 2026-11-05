@@ -36,6 +36,34 @@ docker run --rm --device=/dev/sr0 -v ~/Music:/music \
 Use `--format aac` for AAC (the FLAC master is kept too), or add
 `--discard-master` to delete the FLAC after the AAC files are written.
 
+#### Accurate ripping (offset + AccurateRip)
+
+A bit-exact rip needs the drive's **read offset**: every drive reads audio
+shifted by a fixed number of samples. The script never assumes 0. It resolves
+the offset in this order:
+
+1. `--offset <samples>` (or `$CD_OFFSET`)
+2. a value saved earlier for this drive (`<out>/.cd-ripper/drive-offsets.tsv`)
+3. the [AccurateRip drive database](http://www.accuraterip.com/driveoffsets.htm),
+   matched on the drive's vendor and model (needs network)
+4. measured from the inserted disc with `cyanrip -f` (the disc must be in the
+   AccurateRip database); the result is saved for next time
+
+If none works, it stops and says how to fix it. To measure a new drive once:
+
+```sh
+docker run --rm --device=/dev/sr0 -v ~/Music:/music media-ripper-cd:latest --find-offset
+```
+
+After ripping, cyanrip compares each track's checksum with **AccurateRip**,
+a public database of checksums submitted by other people who ripped the same
+pressing. If every track matches, the rip is bit-for-bit what others got. If
+tracks do not verify, the script **stops before encoding** (wrong offset,
+damaged disc, or a different pressing). `--allow-unverified` keeps the rip
+anyway. A disc that is not in the database cannot be verified; the script
+warns and continues. The cyanrip log, cue sheet and output are kept next to
+the FLAC files.
+
 ### 3. Or import a folder of WAV files (no drive, no network)
 
 Useful for testing, or for discs you already ripped:
@@ -62,6 +90,11 @@ Metadata for a folder import:
 | `-i, --input-dir <dir>` | Import WAVs from a folder instead of the drive |
 | `-o, --out <dir>` | Output folder (default `/music` in the container) |
 | `-d, --device <path>` | Optical drive (default `/dev/sr0`) |
+| `--offset <samples>` | Drive read offset (else found automatically, see above) |
+| `--find-offset` | Measure and save this drive's offset, then exit |
+| `--allow-unverified` | Keep a rip that AccurateRip did not verify |
+| `--barcode <code>` | Folder import: exact MusicBrainz release by barcode |
+| `--lookup` | Folder import: MusicBrainz text search by artist + album |
 | `--artist`, `--album`, `--year` | Override looked-up or folder-derived metadata |
 | `--discard-master` | With `--format aac`, delete the FLAC afterwards |
 
@@ -84,8 +117,9 @@ For disc rips, the cyanrip log and cue sheet are kept next to the FLAC files.
 
 ### Status
 
-Folder import is tested end to end. Disc ripping is tested only against a
-stand-in `cyanrip`, not yet against a real drive.
+Folder import is tested end to end. Disc ripping, including offset
+resolution and AccurateRip checks, is tested only against a stand-in
+`cyanrip` and the real AccurateRip drive list, not yet against a real drive.
 
 ## DVDs (`dvd-ripper.sh`)
 

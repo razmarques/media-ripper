@@ -82,7 +82,11 @@ docker run --rm [--network none] \
   root.
 - Quote every path and value; names contain spaces and accents.
 - Physical disc (Linux host with the drive only): no `--input-dir`, add
-  `--device=/dev/sr0`, keep the network on. Docker on macOS cannot see the
+  `--device=/dev/sr0`, keep the network on. The script finds the drive offset
+  itself (flag/saved/AccurateRip DB/measured); pass `--offset <n>` only if the
+  user gives one. If the user has a new drive, run `--find-offset` once first.
+  If it stops with "AccurateRip did not verify", report that — never add
+  `--allow-unverified` on your own. Docker on macOS cannot see the
   drive — say so rather than trying.
 
 ### 3. Run and read the output

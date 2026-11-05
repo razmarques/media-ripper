@@ -69,10 +69,18 @@ docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$MUSIC_ROOT":/music \
   year and format you give it. `--barcode` (printed on the back cover) is the
   most reliable way to get the right MusicBrainz edition; `--lookup` does a
   text search by artist + album and can pick a reissue.
+- **Disc rips never assume offset 0.** Order: `--offset`/`$CD_OFFSET` → saved
+  per-drive value (`<out>/.cd-ripper/drive-offsets.tsv`) → AccurateRip drive
+  database → `cyanrip -f` measured from the disc → stop with instructions.
+  cyanrip itself refuses to rip with an unset offset ("Offset is unset!").
+  After the rip, if AccurateRip does not verify every track the script stops
+  before encoding (`--allow-unverified` overrides). `--find-offset` measures
+  and saves the offset once per drive.
 - Test status: folder import is tested end to end (FLAC verified bit-exact
   against the WAV; AAC tags incl. accents). The disc path was tested only with
   a stand-in `cyanrip` (tag read-back, naming, FLAC re-encode, retry without
-  lookup) — **not yet against a real drive**.
+  lookup, offset resolution, verification stop) — **not yet against a real
+  drive**; the AccurateRip drive-name matching was tested on the real list.
 - The container sets `LANG=C.UTF-8`; without it fdkaac mangles accented tags
   to `??`. Keep it in `Containerfile.cd`.
 - `inputs/` holds WAV test albums and is git-ignored.

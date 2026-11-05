@@ -36,6 +36,10 @@ YEAR=""
 DISCARD_MASTER=0
 LOOKUP=0
 BARCODE=""
+OFFSET="${CD_OFFSET:-}"
+OFFSET_SOURCE=""
+FIND_OFFSET=0
+ALLOW_UNVERIFIED=0
 
 # Fixed encoder settings -- do not make these configurable.
 FLAC_ARGS=(-8 -V -s -f)
@@ -81,9 +85,27 @@ Options:
                              artist + album and fill in year and missing
                              track titles. Needs network access and works
                              only if the match has the same track count.
+      --offset <samples>     Drive read offset in samples (or $CD_OFFSET).
+                             Required for an accurate rip; if omitted it is
+                             found automatically (see "Drive offset" below).
+      --find-offset          Only measure this drive's offset (needs a disc
+                             that is in the AccurateRip database), save it,
+                             and exit.
+      --allow-unverified     Keep the rip even if AccurateRip says tracks did
+                             not verify. Default: stop before encoding.
       --discard-master       With --format aac: delete the FLAC master after
                              the AAC files are written
   -h, --help                 Show this help
+
+Drive offset (disc rips):
+  Every drive reads audio shifted by a fixed number of samples, and an
+  accurate rip needs that value. It is never assumed to be 0. Order used:
+    1. --offset / $CD_OFFSET
+    2. saved value for this drive (<out>/.cd-ripper/drive-offsets.tsv)
+    3. AccurateRip's drive database, matched on the drive's vendor + model
+    4. measured from the inserted disc (cyanrip -f; the disc must be in the
+       AccurateRip database)
+  If none works the script stops and tells you what to do.
 
 Folder import:
   If --artist/--album are not given, they are parsed from a folder named
@@ -120,6 +142,9 @@ parse_flags() {
             --year)           YEAR="${2:-}"; shift 2 ;;
             --barcode)        BARCODE="${2:-}"; LOOKUP=1; shift 2 ;;
             --lookup)         LOOKUP=1; shift ;;
+            --offset)         OFFSET="${2:-}"; shift 2 ;;
+            --find-offset)    FIND_OFFSET=1; shift ;;
+            --allow-unverified) ALLOW_UNVERIFIED=1; shift ;;
             --discard-master) DISCARD_MASTER=1; shift ;;
             -h|--help)        show_usage; exit 0 ;;
             *)
@@ -136,6 +161,11 @@ parse_flags() {
     esac
     if [[ $DISCARD_MASTER -eq 1 && "$FORMAT" != "aac" ]]; then
         die "--discard-master only makes sense with --format aac"
+    fi
+    if [[ -n "$OFFSET" ]]; then
+        OFFSET="${OFFSET#+}"
+        [[ "$OFFSET" =~ ^-?[0-9]+$ ]] || die "--offset must be an integer (got '$OFFSET')"
+        OFFSET_SOURCE="user"
     fi
     if [[ -n "$BARCODE" ]]; then
         BARCODE="${BARCODE//[ -]/}"
@@ -310,18 +340,179 @@ lookup_musicbrainz() {
 }
 
 # ============================================================================
+# Drive offset + rip verification
+# ============================================================================
+# cyanrip refuses to rip until it knows the drive's read offset, and a wrong
+# offset ruins AccurateRip verification. We never fall back to 0.
+
+AR_OFFSETS_URL="http://www.accuraterip.com/driveoffsets.htm"
+
+# "VENDOR - MODEL" for the drive, normalised like AccurateRip's list.
+# Override with $CD_DRIVE_ID.
+drive_id() {
+    if [[ -n "${CD_DRIVE_ID:-}" ]]; then
+        printf '%s' "$CD_DRIVE_ID"
+        return 0
+    fi
+    local dev dir vendor model
+    dev="$(basename "$DEVICE")"
+    dir="/sys/class/block/$dev/device"
+    [[ -r "$dir/vendor" && -r "$dir/model" ]] || return 0
+    vendor="$(tr -s ' ' < "$dir/vendor" | sed 's/^ //;s/ $//')"
+    model="$(tr -s ' ' < "$dir/model" | sed 's/^ //;s/ $//')"
+    printf '%s - %s' "$vendor" "$model"
+}
+
+# Normalise a drive name so sysfs names and the AccurateRip list compare equal.
+norm_drive() {
+    printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | tr -s ' ' \
+        | sed -E 's/ +- +/ - /; s/^HL-DT-ST - /LG ELECTRONICS - /; s/^MATSHITA - /PANASONIC - /; s/^JLMS - /LITE-ON - /; s/^ATA - //; s/^ //; s/ $//'
+}
+
+offset_cache_file() { printf '%s/.cd-ripper/drive-offsets.tsv' "$OUT_DIR"; }
+
+cache_get_offset() {
+    local id="$1" f
+    f="$(offset_cache_file)"
+    [[ -f "$f" ]] || return 0
+    awk -F'\t' -v id="$id" '$1 == id { v = $2 } END { if (v != "") print v }' "$f"
+}
+
+cache_put_offset() {
+    local id="$1" off="$2" f
+    [[ -n "$id" ]] || return 0
+    f="$(offset_cache_file)"
+    mkdir -p "$(dirname "$f")"
+    if [[ -f "$f" ]]; then
+        grep -v -F "$id"$'\t' "$f" > "$f.tmp" || true
+        mv "$f.tmp" "$f"
+    fi
+    printf '%s\t%s\n' "$id" "$off" >> "$f"
+}
+
+# AccurateRip drive database lookup. Prints the offset only if the drive name
+# matches and all matching rows agree on one numeric value.
+ar_db_offset() {
+    local id="$1" want
+    [[ -n "$id" ]] || return 0
+    command -v curl >/dev/null || return 0
+    want="$(norm_drive "$id")"
+    curl -fsS --max-time 30 -A "media-ripper/1.0 (cd-ripper.sh)" "$AR_OFFSETS_URL" 2>/dev/null \
+      | sed -e 's/<[^>]*>/\n/g' -e 's/&nbsp;/ /g' -e 's/&amp;/\&/g' \
+      | awk -v want="$want" '
+            function trim(x) { gsub(/^[ \t\r]+|[ \t\r]+$/, "", x); return x }
+            function norm(x,   y) {
+                y = toupper(x); gsub(/[ \t]+/, " ", y)
+                sub(/ +- +/, " - ", y)
+                sub(/^HL-DT-ST - /, "LG ELECTRONICS - ", y)
+                sub(/^MATSHITA - /, "PANASONIC - ", y)
+                sub(/^JLMS - /, "LITE-ON - ", y)
+                sub(/^ATA - /, "", y)
+                return trim(y)
+            }
+            { l = trim($0) }
+            l == "" { next }
+            l ~ /^[+-][0-9]+$/ || l ~ /^\[Purged\]$/ {
+                if (norm(prev) == want) {
+                    if (l ~ /^[+-]/) { v = l; sub(/^\+/, "", v); seen[v] = 1 } else seen["P"] = 1
+                }
+            }
+            { prev = l }
+            END {
+                n = 0; for (k in seen) { n++; val = k }
+                if (n == 1 && val != "P") print val
+            }'
+}
+
+# Measure the offset from the inserted disc (needs an AccurateRip entry).
+measure_offset() {
+    local out found
+    out="$(cyanrip -d "$DEVICE" -f 2>&1 | tee /dev/stderr)" || true
+    found="$(printf '%s' "$out" | grep -aoE 'Drive offset of [+-]?[0-9]+ found' | tail -1 | grep -oE '[+-]?[0-9]+')"
+    found="${found#+}"
+    [[ -n "$found" ]] && printf '%s' "$found"
+    return 0
+}
+
+resolve_offset() {
+    local id cached db
+    id="$(drive_id)"
+    echo "Drive: ${id:-<unknown>}"
+
+    if [[ -n "$OFFSET" ]]; then
+        echo "Drive offset: $OFFSET (from --offset / \$CD_OFFSET)"
+        return 0
+    fi
+
+    cached="$(cache_get_offset "$id")"
+    if [[ -n "$cached" ]]; then
+        OFFSET="$cached"; OFFSET_SOURCE="cache"
+        echo "Drive offset: $OFFSET (saved for this drive)"
+        return 0
+    fi
+
+    db="$(ar_db_offset "$id")"
+    if [[ -n "$db" ]]; then
+        OFFSET="$db"; OFFSET_SOURCE="db"
+        echo "Drive offset: $OFFSET (AccurateRip drive database)"
+        return 0
+    fi
+
+    echo "Drive not in the AccurateRip database (or name not recognised)."
+    echo "Measuring the offset from the inserted disc (cyanrip -f)..."
+    OFFSET="$(measure_offset)"
+    if [[ -n "$OFFSET" ]]; then
+        OFFSET_SOURCE="measured"
+        echo "Drive offset: $OFFSET (measured)"
+        cache_put_offset "$id" "$OFFSET"
+        return 0
+    fi
+
+    die "Could not determine the drive offset.
+  - Look your drive up at $AR_OFFSETS_URL and pass --offset <samples>, or
+  - insert a disc that is in the AccurateRip database and run --find-offset."
+}
+
+# Reads cyanrip's AccurateRip summary. Sets VERIFY_STATUS to
+# verified | failed | unavailable.
+check_verification() {
+    local out="$1" line acc tot
+    VERIFY_STATUS="unavailable"
+    if grep -aq 'missing entry\|Unable to get AccuRIP DB data' "$out"; then
+        echo "AccurateRip: this disc is not in the database; the rip cannot be verified."
+        return 0
+    fi
+    line="$(grep -aE 'Tracks ripped accurately: [0-9]+/[0-9]+' "$out" | tail -1)"
+    if [[ -z "$line" ]]; then
+        echo "AccurateRip: no verification result found in cyanrip output."
+        return 0
+    fi
+    acc="$(printf '%s' "$line" | grep -oE '[0-9]+/[0-9]+' | head -1 | cut -d/ -f1)"
+    tot="$(printf '%s' "$line" | grep -oE '[0-9]+/[0-9]+' | head -1 | cut -d/ -f2)"
+    if [[ "$acc" -eq "$tot" ]]; then
+        VERIFY_STATUS="verified"
+        echo "AccurateRip: all $tot tracks verified."
+    else
+        VERIFY_STATUS="failed"
+        echo "AccurateRip: only $acc/$tot tracks verified."
+    fi
+    return 0
+}
+
+# ============================================================================
 # Source stage: optical drive
 # ============================================================================
 
 rip_with_cyanrip() {
     local stage="$1" nolookup="$2"
-    local args=(-d "$DEVICE" -o flac -D rip -F "{track}" -L rip -M rip)
+    local args=(-d "$DEVICE" -s "$OFFSET" -o flac -D rip -F "{track}" -L rip -M rip)
     [[ "$nolookup" == "1" ]] && args+=(-N)
-    (cd "$stage" && cyanrip "${args[@]}")
+    (cd "$stage" && cyanrip "${args[@]}") 2>&1 | tee "$stage/cyanrip.out"
 }
 
 source_from_disc() {
     echo "=== Source: optical drive ($DEVICE) ==="
+    resolve_offset
     local stage="$WORK_DIR/stage"
     mkdir -p "$stage"
 
@@ -331,6 +522,18 @@ source_from_disc() {
         echo "(Output will use placeholder names unless --artist/--album given.)"
         rm -rf "$stage" && mkdir -p "$stage"
         rip_with_cyanrip "$stage" 1 || die "cyanrip failed"
+    fi
+
+    echo ""
+    check_verification "$stage/cyanrip.out"
+    if [[ "$VERIFY_STATUS" == "failed" && $ALLOW_UNVERIFIED -eq 0 ]]; then
+        die "AccurateRip did not verify every track, so the rip is not trusted.
+  Likely causes: wrong drive offset (offset used: $OFFSET, from $OFFSET_SOURCE),
+  a damaged disc, or a different pressing than the database holds.
+  Try --find-offset, clean the disc, or pass --allow-unverified to keep it."
+    fi
+    if [[ "$VERIFY_STATUS" == "verified" && ( "$OFFSET_SOURCE" == "db" ) ]]; then
+        cache_put_offset "$(drive_id)" "$OFFSET"
     fi
 
     local f
@@ -368,6 +571,7 @@ source_from_disc() {
     mkdir -p "$WORK_DIR/extras"
     find "$stage/rip" -maxdepth 1 -type f \( -name '*.log' -o -name '*.cue' \) \
         -exec cp {} "$WORK_DIR/extras/" \; 2>/dev/null || true
+    cp "$stage/cyanrip.out" "$WORK_DIR/extras/cyanrip-output.txt" 2>/dev/null || true
 }
 
 # ============================================================================
@@ -479,6 +683,19 @@ WORK_DIR="$(mktemp -d)"
 MASTER_FILES=()
 MASTER_DIR=""
 AAC_DIR=""
+
+if [[ $FIND_OFFSET -eq 1 ]]; then
+    command -v cyanrip >/dev/null || die "cyanrip not found"
+    id="$(drive_id)"
+    echo "Drive: ${id:-<unknown>}"
+    found="$(measure_offset)"
+    [[ -n "$found" ]] || die "Could not measure the offset. The inserted disc must be in the AccurateRip database."
+    cache_put_offset "$id" "$found"
+    echo ""
+    echo "Drive offset: $found (saved to $(offset_cache_file))"
+    echo "Use --offset $found to pass it explicitly."
+    exit 0
+fi
 
 if [[ -n "$INPUT_DIR" ]]; then
     source_from_folder
