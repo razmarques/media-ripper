@@ -37,6 +37,30 @@ clean_previous_outputs() { # format (flac|aac)
     return 0
 }
 
+# Copy the rip evidence into <album folder>/extras/ so it travels with the music
+# when the folder is moved into a library. Only for disc rips. The originals stay
+# in RIP/<id>/. For FLAC the cue sheet's FILE names are rewritten to the final
+# track names (one level up, "../"); for AAC the cue is copied unchanged because
+# it describes the lossless rip, not the .m4a files.
+write_extras() { # album dir, ext (flac|m4a)
+    local dir="$1" ext="$2" ex="$1/extras" i raw new cue
+    [[ "$SRC_KIND" == "flac" && -d "$SESSION_DIR/raw" ]] || return 0
+    mkdir -p "$ex"
+    [[ -f "$SESSION_DIR/raw/rip.log" ]] && cp "$SESSION_DIR/raw/rip.log" "$ex/rip.log"
+    [[ -f "$SESSION_DIR/cyanrip-output.txt" ]] && cp "$SESSION_DIR/cyanrip-output.txt" "$ex/cyanrip-output.txt"
+    if [[ -f "$SESSION_DIR/raw/rip.cue" ]]; then
+        cue="$(<"$SESSION_DIR/raw/rip.cue")"
+        if [[ "$ext" == "flac" ]]; then
+            for i in "${!TRACK_SRC[@]}"; do
+                raw="$(basename "${TRACK_SRC[$i]}")"
+                new="$(track_basename "$i").flac"
+                cue="${cue//\"$raw\"/\"../$new\"}"
+            done
+        fi
+        printf '%s\n' "$cue" > "$ex/rip.cue"
+    fi
+}
+
 encode_flac_master() {
     local rel dir total i dst
     total=${#TRACK_SRC[@]}
@@ -56,6 +80,7 @@ encode_flac_master() {
         write_flac_tags "$dst" "$i" "$total"
         MASTER_FILES+=("$dst")
     done
+    write_extras "$dir" flac
     MASTER_REL="$rel"
     rip_json_add_output flac "$rel"
 }
@@ -77,6 +102,7 @@ encode_aac_from_master() {
         flac -d -c -s "${MASTER_FILES[$i]}" | fdkaac "${FDK_ARGS[@]}" -o "$dst" -
         write_m4a_tags "$dst" "$i" "$total"
     done
+    write_extras "$dir" m4a
     AAC_REL="$rel"
     rip_json_add_output aac "$rel"
 }

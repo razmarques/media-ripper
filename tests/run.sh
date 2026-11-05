@@ -67,6 +67,9 @@ FLACDIR="$OUT/FLAC/Gerry Mulligan - Night Lights"; AACDIR="$OUT/AAC/Gerry Mullig
 check "flat FLAC folder, named tracks"     bash -c "ls '$FLACDIR'/01\ -\ *.flac"
 check "AAC folder with 7 tracks"           bash -c "[ \$(ls '$AACDIR'/*.m4a | wc -l) -eq 7 ]"
 check "FLAC tagged with title"             bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=TITLE '/m/FLAC/Gerry Mulligan - Night Lights/01 - Night Lights (1963 version).flac' | grep -q 'Night Lights'"
+check "extras/ holds rip.log and rip.cue (FLAC)" test -f "$FLACDIR/extras/rip.log" -a -f "$FLACDIR/extras/rip.cue"
+check "extras/ holds rip.log and rip.cue (AAC)"  test -f "$AACDIR/extras/rip.log" -a -f "$AACDIR/extras/rip.cue"
+check "FLAC cue points at the renamed tracks"    grep -q '"\.\./01 - ' "$FLACDIR/extras/rip.cue"
 check "rip.json lists both outputs"        bash -c "[ \$(grep -c '\"dir\"' '$RIPDIR/rip.json') -eq 2 ]"
 
 echo "== 4. fix metadata without touching raw rip or audio"
@@ -77,6 +80,7 @@ cdr update "$RIP" --artist "Gerry Mulligan Quartet" --apply >"$T/u2.log" 2>&1
 NEWF="$OUT/FLAC/Gerry Mulligan Quartet - Night Lights"
 check "folder renamed on --apply"          test -d "$NEWF"
 check "AAC folder renamed too"             test -d "$OUT/AAC/Gerry Mulligan Quartet - Night Lights"
+check "extras/ moved with the folder"      test -f "$NEWF/extras/rip.cue"
 A_AFTER="$(audio_md5 "/music/FLAC/Gerry Mulligan Quartet - Night Lights/$(basename "$FLAC1")")"
 check "audio stream byte-identical after update" test "$A_BEFORE" = "$A_AFTER"
 check "raw rip, log and cue untouched"     test "$RAW_BEFORE" = "$(sums "$RIPDIR/raw")"

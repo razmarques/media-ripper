@@ -70,6 +70,12 @@ apply_to_dir() { # dir
         fi
     done
 
+    # Keep the extras/ copy of the rip log + cue in step with the new names.
+    if [[ $APPLY -eq 1 && "$SRC_KIND" == "flac" ]]; then
+        ext="${files[0]##*.}"; ext="${ext,,}"
+        write_extras "$dir" "$ext"
+    fi
+
     newdir="$(dirname "$dir")/$(album_rel_dir)"
     if [[ "$newdir" != "$dir" ]]; then
         if [[ -e "$newdir" ]]; then

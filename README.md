@@ -148,13 +148,18 @@ RIP/<id>/raw/           the lossless rip + rip.log + rip.cue (never renamed or d
 RIP/<id>/rip.json       drive, offset, AccurateRip result, disc ID, encoded folders
 RIP/<id>/release.json   the matched metadata (after match --save)
 FLAC/Artist - Album/01 - Title.flac
+FLAC/Artist - Album/extras/   rip.log, rip.cue, cyanrip-output.txt (disc rips only)
 AAC/Artist - Album/01 - Title.m4a
+AAC/Artist - Album/extras/    same, so the record moves with the folder
 FLAC/Artist - Album - Disc 2/...                  multi-disc releases only
 FLAC/Unknown Artist - Unknown Album/Track 01.flac no metadata found
 ```
 
 FLAC and AAC are separate trees so the two formats never collide. The year is
-tagged but not part of the folder name.
+tagged but not part of the folder name. `extras/` is a copy: the originals stay in
+`RIP/<id>/`. In the FLAC copy the cue's file names point at the renamed tracks
+(`../01 - Title.flac`); `update` keeps them in step. In the AAC copy the cue is
+unchanged, since it describes the lossless rip.
 
 ### Status and limits
 
