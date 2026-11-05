@@ -38,55 +38,43 @@ Same distrobox requirement as above.
 
 ## Ripping an audio CD
 
-`cd-ripper.sh` is a single command (no subcommands): it rips a CD (or imports
-a folder of WAVs), encodes, and writes tagged files to an output folder. It
-runs in its own image, built from `Containerfile.cd` (cyanrip, flac, fdkaac) —
-separate from the DVD image because the toolchains share nothing.
+`cd-ripper.sh` has independent stages, run in its own image (`Containerfile.cd`:
+cyanrip, flac, fdkaac, AtomicParsley, ffmpeg, jq): `rip`, `match`, `update`,
+`encode`, and `run` (rip → match → encode; also the default with no command).
+Code is split into `lib/*.sh`. Use the **`rip-cd` skill** to run it.
 
-```
-docker build -t media-ripper-cd:latest -f Containerfile.cd .
-
-# Disc: needs the drive and network (MusicBrainz + AccurateRip)
-docker run --rm --device=/dev/sr0 -v "$MUSIC_ROOT":/music \
-    media-ripper-cd:latest --format flac|aac [--discard-master]
-
-# Folder import (testing; offline). Artist/album come from a folder named
-# "Artist - Album [WAV]", titles from file names like "3.Title.wav"
-docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$MUSIC_ROOT":/music \
-    media-ripper-cd:latest --input-dir "/in/Artist - Album [WAV]" --format aac
-```
-
-- The **FLAC master is always produced first** (`flac -8 --verify`); AAC is
-  derived from it (`fdkaac -m 5`, VBR, AAC-LC `.m4a`). Never encode lossy from
-  lossy. `--discard-master` deletes the FLAC after an AAC run; by default it
-  is kept. Encoder settings are fixed by the script — don't change them.
-- Output goes to `--out` (default `/music` inside the container, i.e. the
-  mounted `$MUSIC_ROOT`), in separate trees: `FLAC/…` and `AAC/…`.
-- Layout: one flat folder per release, `Artist - Album/NN - Title.ext`, with
-  `- Disc N` appended **only for multi-disc releases** (no year in the folder
-  name; the year is still tagged). When there is no match:
-  `Unknown Artist - Unknown Album/Track NN.ext`. Folder imports of a
-  multi-disc release need `--disc N/TOTAL`; the script refuses to guess.
-- Use the **`rip-cd` skill** to run it: it assembles the `docker run`
-  command (mounts, flags, network) from the folder, barcode, artist, album,
-  year and format you give it. `--barcode` (printed on the back cover) is the
-  most reliable way to get the right MusicBrainz edition; `--lookup` does a
-  text search by artist + album and can pick a reissue.
-- **Disc rips never assume offset 0.** Order: `--offset`/`$CD_OFFSET` → saved
+Key ideas:
+- `rip` writes `<out>/RIP/<id>/` (raw lossless FLAC + `rip.log` + `rip.cue` in
+  `raw/`, `rip.json`) and does **no metadata lookup** (`cyanrip -N`), so a
+  metadata failure can never cost a rip. **Never re-rip a disc to fix tags.**
+- Metadata is a separate step: `match` finds the MusicBrainz release (order:
+  `--mb-release`, `--barcode`, saved disc ID, `--lookup` artist+album search),
+  validates it against the real track count and durations, and previews;
+  `--save` writes `release.json`. `update` writes tags/cover/names into existing
+  FLAC/M4A files in place (no re-encode), preview unless `--apply`, and works on
+  a rip folder or any folder of `.flac`/`.m4a` files.
+- `encode` makes the FLAC master (`flac -8 --verify`) and, with `--format aac`,
+  AAC derived from it (`fdkaac -m 5`). Encoder settings are fixed — don't change
+  them. `--discard-master` removes only the FLAC deliverable; `RIP/` (log, cue)
+  is never deleted.
+- Output: separate trees `FLAC/Artist - Album/NN - Title.flac` and
+  `AAC/Artist - Album/…` (flat; ` - Disc N` only for multi-disc; year is tagged
+  not in the folder name). No match: `Unknown Artist - Unknown Album/Track NN`.
+  Multi-disc needs `--disc N/TOTAL` unless one disc fits the durations.
+- Ambiguous matches stop and list candidates; the user picks with `--mb-release`
+  or `--pick earliest`. Never guess a barcode, release ID or year.
+- **Drive offset is never assumed 0.** Order: `--offset`/`$CD_OFFSET` → saved
   per-drive value (`<out>/.cd-ripper/drive-offsets.tsv`) → AccurateRip drive
-  database → `cyanrip -f` measured from the disc → stop with instructions.
-  cyanrip itself refuses to rip with an unset offset ("Offset is unset!").
-  After the rip, if AccurateRip does not verify every track the script stops
-  before encoding (`--allow-unverified` overrides). `--find-offset` measures
-  and saves the offset once per drive.
-- Test status: folder import is tested end to end (FLAC verified bit-exact
-  against the WAV; AAC tags incl. accents). The disc path was tested only with
-  a stand-in `cyanrip` (tag read-back, naming, FLAC re-encode, retry without
-  lookup, offset resolution, verification stop) — **not yet against a real
-  drive**; the AccurateRip drive-name matching was tested on the real list.
-- The container sets `LANG=C.UTF-8`; without it fdkaac mangles accented tags
-  to `??`. Keep it in `Containerfile.cd`.
-- `inputs/` holds WAV test albums and is git-ignored.
+  database → `cyanrip -f` measured → stop with instructions. After the rip, if
+  AccurateRip does not verify every track, `rip` stops (raw kept);
+  `--allow-unverified` overrides. `--find-offset` measures once per drive.
+- Disc commands need `--device` and network; WAV-folder runs can use
+  `--network none`. Docker on macOS can't see the drive.
+- The container sets `LANG=C.UTF-8` (fdkaac mangles accents otherwise). `inputs/`
+  (WAV test albums) and `outputs/` are git-ignored test folders.
+- Tests: `tests/run.sh` (docker, stand-in `cyanrip`, network). **Not yet verified
+  on a real drive:** cyanrip's real `-N` output and log/cue names, whether
+  `cyanrip -I` prints the disc ID, and its AccurateRip summary wording.
 
 ## Standing preferences
 

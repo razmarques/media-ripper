@@ -5,16 +5,17 @@
 # Build:
 #   docker build -t media-ripper-cd:latest -f Containerfile.cd .
 #
-# Run from a folder under the music root (mounted at /music):
-#   docker run --rm -v "$MUSIC_ROOT":/music -w /music \
-#       --device=/dev/sr0 media-ripper-cd:latest --format flac
+# Commands: rip | match | update | encode | run (see --help). Examples:
+#   docker run --rm --device=/dev/sr0 -v "$MUSIC_ROOT":/music \
+#       media-ripper-cd:latest run --format aac --barcode 042281827129
+#   docker run --rm -v "$MUSIC_ROOT":/music media-ripper-cd:latest \
+#       update /music/RIP/<id> --barcode 042281827129 --apply
+#   docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$MUSIC_ROOT":/music \
+#       media-ripper-cd:latest run "/in/Artist - Album [WAV]" --format aac
 #
-# Folder import (no drive needed; also no network unless looking up tags):
-#   docker run --rm --network none -v "$MUSIC_ROOT":/music -w /music \
-#       media-ripper-cd:latest --input-dir "inputs/Artist - Album [WAV]"
-#
-# Disc ripping needs --device (the drive) and network (MusicBrainz lookup and
-# AccurateRip verification), unlike the DVD image which runs offline.
+# Disc commands need --device (the drive) and network (MusicBrainz and
+# AccurateRip), unlike the DVD image which runs offline. match/update with an
+# identifier need network too. Tests: tests/run.sh.
 
 FROM docker.io/library/ubuntu:24.04
 
@@ -29,10 +30,11 @@ RUN apt-get update \
  && add-apt-repository -y multiverse \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      cyanrip flac fdkaac ffmpeg curl jq ca-certificates \
+      cyanrip flac fdkaac ffmpeg curl jq ca-certificates atomicparsley \
  && rm -rf /var/lib/apt/lists/*
 
 COPY cd-ripper.sh /usr/local/bin/cd-ripper.sh
+COPY lib/ /usr/local/lib/cd-ripper/
 RUN chmod +x /usr/local/bin/cd-ripper.sh
 
 ENTRYPOINT ["/usr/local/bin/cd-ripper.sh"]

@@ -1,0 +1,33 @@
+#!/bin/bash
+# Stand-in for cyanrip, used by tests/run.sh. Not a real ripper: it "rips" the
+# WAV files in $FAKE_SRC into FLACs named 01.flac, 02.flac ... with only a
+# TRACKNUMBER tag (like `cyanrip -N`), and prints the lines cd-ripper.sh reads.
+off=""; find=0; info=0; dir="rip"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -s) off="$2"; shift 2 ;;
+    -f) find=1; shift ;;
+    -I) info=1; shift ;;
+    -D) dir="$2"; shift 2 ;;
+    -d|-o|-F|-L|-M|-c) shift 2 ;;
+    *) shift ;;
+  esac
+done
+echo "cyanrip call: off=[$off] find=$find info=$info dir=$dir" >> "${FAKE_LOG:-/tmp/fake-calls.log}"
+if [[ $info == 1 ]]; then
+  echo "Disc info"
+  echo "MusicBrainz Disc ID: ${FAKE_DISCID:-AAAAAAAAAAAAAAAAAAAAAAAAAAA-}"
+  exit 0
+fi
+if [[ $find == 1 ]]; then echo "Drive offset of +6 found (confidence: 5)!"; exit 0; fi
+if [[ -z $off ]]; then echo "Offset is unset! To continue with an offset of 0, run with -s 0!"; exit 1; fi
+mkdir -p "$dir"
+n=0
+while IFS= read -r -d '' w; do
+  n=$((n + 1))
+  flac -s -1 -f -T "TRACKNUMBER=$n" -o "$dir/$(printf %02d "$n").flac" "$w" 2>/dev/null
+done < <(find "$FAKE_SRC" -maxdepth 1 -name '*.wav' -print0 | sort -zV)
+echo "ripped $n tracks with offset $off"
+echo "Tracks ripped accurately: $n/$n"
+echo "fake rip log" > "$dir/rip.log"
+printf 'FILE "01.flac" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n' > "$dir/rip.cue"
