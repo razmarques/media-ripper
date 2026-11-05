@@ -29,7 +29,7 @@ RUN apt-get update \
  && add-apt-repository -y multiverse \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      cyanrip flac fdkaac ffmpeg \
+      cyanrip flac fdkaac ffmpeg curl jq ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY cd-ripper.sh /usr/local/bin/cd-ripper.sh

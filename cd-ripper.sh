@@ -34,6 +34,8 @@ ARTIST=""
 ALBUM=""
 YEAR=""
 DISCARD_MASTER=0
+LOOKUP=0
+BARCODE=""
 
 # Fixed encoder settings -- do not make these configurable.
 FLAC_ARGS=(-8 -V -s -f)
@@ -71,6 +73,14 @@ Options:
       --artist <name>        Album artist (overrides lookup / folder name)
       --album <title>        Album title  (overrides lookup / folder name)
       --year <yyyy>          Release year (overrides lookup)
+      --barcode <code>       Folder import only: look up the exact release by
+                             its barcode (UPC/EAN, printed on the back
+                             cover). Implies --lookup. Most reliable option;
+                             artist and album are filled in if not given.
+      --lookup               Folder import only: search MusicBrainz for the
+                             artist + album and fill in year and missing
+                             track titles. Needs network access and works
+                             only if the match has the same track count.
       --discard-master       With --format aac: delete the FLAC master after
                              the AAC files are written
   -h, --help                 Show this help
@@ -108,6 +118,8 @@ parse_flags() {
             --artist)         ARTIST="${2:-}"; shift 2 ;;
             --album)          ALBUM="${2:-}"; shift 2 ;;
             --year)           YEAR="${2:-}"; shift 2 ;;
+            --barcode)        BARCODE="${2:-}"; LOOKUP=1; shift 2 ;;
+            --lookup)         LOOKUP=1; shift ;;
             --discard-master) DISCARD_MASTER=1; shift ;;
             -h|--help)        show_usage; exit 0 ;;
             *)
@@ -124,6 +136,13 @@ parse_flags() {
     esac
     if [[ $DISCARD_MASTER -eq 1 && "$FORMAT" != "aac" ]]; then
         die "--discard-master only makes sense with --format aac"
+    fi
+    if [[ -n "$BARCODE" ]]; then
+        BARCODE="${BARCODE//[ -]/}"
+        [[ "$BARCODE" =~ ^[0-9]{8,14}$ ]] || die "--barcode must be 8-14 digits"
+    fi
+    if [[ $LOOKUP -eq 1 && -z "$INPUT_DIR" ]]; then
+        die "--lookup/--barcode apply to --input-dir imports (disc rips look up automatically)"
     fi
     if [[ -n "$YEAR" && ! "$YEAR" =~ ^[0-9]{4}$ ]]; then
         die "--year must be 4 digits (got '$YEAR')"
@@ -219,6 +238,75 @@ source_from_folder() {
     done
     SRC_IS_FLAC=0
     echo "Tracks: ${#TRACK_SRC[@]}"
+}
+
+# Search MusicBrainz for ARTIST + ALBUM; accept a release only if one of its
+# media has exactly as many tracks as we have WAVs. Fills YEAR (if empty) and
+# any empty track titles. Failure is non-fatal: we keep what we have.
+lookup_musicbrainz() {
+    local total=${#TRACK_SRC[@]}
+    local ua="media-ripper/1.0 (cd-ripper.sh)"
+    local mb="https://musicbrainz.org/ws/2"
+
+    if [[ -z "$BARCODE" && ( -z "$ARTIST" || -z "$ALBUM" ) ]]; then
+        echo "Lookup skipped: need --barcode, or both artist and album."
+        return 0
+    fi
+    command -v curl >/dev/null && command -v jq >/dev/null || {
+        echo "Lookup skipped: curl/jq not available."
+        return 0
+    }
+
+    echo ""
+    local q resp ids id titles date n=0
+    if [[ -n "$BARCODE" ]]; then
+        echo "=== MusicBrainz lookup: barcode $BARCODE ($total tracks) ==="
+        q="barcode:$BARCODE"
+    else
+        echo "=== MusicBrainz lookup: $ARTIST - $ALBUM ($total tracks) ==="
+        q="artist:\"${ARTIST//\"/}\" AND release:\"${ALBUM//\"/}\""
+    fi
+    resp="$(curl -fsS --max-time 20 -A "$ua" -G "$mb/release" \
+        --data-urlencode "query=$q" --data-urlencode "limit=10" \
+        --data-urlencode "fmt=json")" || {
+        echo "Lookup failed (network?); continuing without it."
+        return 0
+    }
+    # The barcode search is fuzzy: keep only releases whose barcode is exact.
+    ids="$(printf '%s' "$resp" | jq -r --arg b "$BARCODE" \
+        '.releases[]? | select($b == "" or .barcode == $b) | .id')"
+    [[ -n "$ids" ]] || { echo "No releases found; continuing without it."; return 0; }
+
+    while IFS= read -r id; do
+        n=$((n + 1)); [[ $n -gt 6 ]] && break
+        sleep 1   # MusicBrainz asks for at most 1 request/second
+        resp="$(curl -fsS --max-time 20 -A "$ua" -G "$mb/release/$id" \
+            --data-urlencode "inc=recordings+artist-credits" --data-urlencode "fmt=json")" || continue
+        titles="$(printf '%s' "$resp" | jq -r --argjson n "$total" \
+            '[.media[]? | select((.tracks | length) == $n)][0] | .tracks[]?.title')"
+        [[ -n "$titles" ]] || continue
+
+        date="$(printf '%s' "$resp" | jq -r '.date // ""')"
+        if [[ -n "$BARCODE" ]]; then
+            [[ -z "$ARTIST" ]] && ARTIST="$(printf '%s' "$resp" | jq -r \
+                '[."artist-credit"[]? | .name + (.joinphrase // "")] | join("")')"
+            [[ -z "$ALBUM" ]] && ALBUM="$(printf '%s' "$resp" | jq -r '.title // ""')"
+        fi
+        if [[ -z "$YEAR" && "${date:0:4}" =~ ^[0-9]{4}$ ]]; then
+            YEAR="${date:0:4}"
+        fi
+        local i=0 t
+        while IFS= read -r t; do
+            [[ -z "${TRACK_TITLE[$i]}" ]] && TRACK_TITLE[$i]="$t"
+            i=$((i + 1))
+        done <<< "$titles"
+        echo "Matched release $id (${date:-no date})"
+        return 0
+    done <<< "$ids"
+
+    echo "No release with $total tracks matched; continuing without it."
+    [[ -n "$BARCODE" ]] && echo "(Does the barcode belong to this edition, and the track count match?)"
+    return 0
 }
 
 # ============================================================================
@@ -394,6 +482,7 @@ AAC_DIR=""
 
 if [[ -n "$INPUT_DIR" ]]; then
     source_from_folder
+    [[ $LOOKUP -eq 1 ]] && lookup_musicbrainz
 else
     command -v cyanrip >/dev/null || die "cyanrip not found"
     source_from_disc
