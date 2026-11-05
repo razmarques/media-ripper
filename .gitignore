@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Media files (rips and encodes)
+*.mkv
+*.mp4
+*.iso
+*.m4v
+*.avi
+
+# Raw MakeMKV rips and scan output
+output/
+
+# Editor
+.vscode/
+.idea/
+*.swp
