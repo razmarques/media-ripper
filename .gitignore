@@ -14,6 +14,10 @@
 # Raw MakeMKV rips and scan output
 output/
 
+# WAV files used to test cd-ripper.sh
+inputs/
+outputs/
+
 # Editor
 .vscode/
 .idea/

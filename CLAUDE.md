@@ -36,6 +36,37 @@ and renaming each encoded file to its matched episode.
 
 Same distrobox requirement as above.
 
+## Ripping an audio CD
+
+`cd-ripper.sh` is a single command (no subcommands): it rips a CD (or imports
+a folder of WAVs), encodes, and writes tagged files to an output folder. It
+runs in its own image, built from `Containerfile.cd` (cyanrip, flac, fdkaac) —
+separate from the DVD image because the toolchains share nothing.
+
+```
+docker build -t media-ripper-cd:latest -f Containerfile.cd .
+
+# Disc: needs the drive and network (MusicBrainz + AccurateRip)
+docker run --rm --device=/dev/sr0 -v "$MUSIC_ROOT":/music \
+    media-ripper-cd:latest --format flac|aac [--discard-master]
+
+# Folder import (testing; offline). Artist/album come from a folder named
+# "Artist - Album [WAV]", titles from file names like "3.Title.wav"
+docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$MUSIC_ROOT":/music \
+    media-ripper-cd:latest --input-dir "/in/Artist - Album [WAV]" --format aac
+```
+
+- The **FLAC master is always produced first** (`flac -8 --verify`); AAC is
+  derived from it (`fdkaac -m 5`, VBR, AAC-LC `.m4a`). Never encode lossy from
+  lossy. `--discard-master` deletes the FLAC after an AAC run; by default it
+  is kept. Encoder settings are fixed by the script — don't change them.
+- Output goes to `--out` (default `/music` inside the container, i.e. the
+  mounted `$MUSIC_ROOT`), in separate trees: `FLAC/…` and `AAC/…`.
+- Layout when metadata is known: `Artist/Album (Year)/NN - Title.ext`. When
+  there is no match: `Unknown Artist - Unknown Album/Track NN.ext`.
+- The disc path (cyanrip) has not been tested against a real drive yet; the
+  folder-import path has.
+
 ## Standing preferences
 
 - Always keep **European Portuguese + English** audio and subtitles, with the

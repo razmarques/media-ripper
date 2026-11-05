@@ -1,0 +1,38 @@
+# Self-contained image for running cd-ripper.sh: secure CD ripping (cyanrip),
+# FLAC (reference encoder) and AAC (FDK-AAC) encoders, plus the script itself
+# baked in as the entrypoint. One throwaway container per cd-ripper.sh run.
+#
+# Build:
+#   docker build -t media-ripper-cd:latest -f Containerfile.cd .
+#
+# Run from a folder under the music root (mounted at /music):
+#   docker run --rm -v "$MUSIC_ROOT":/music -w /music \
+#       --device=/dev/sr0 media-ripper-cd:latest --format flac
+#
+# Folder import (no drive needed; also no network unless looking up tags):
+#   docker run --rm --network none -v "$MUSIC_ROOT":/music -w /music \
+#       media-ripper-cd:latest --input-dir "inputs/Artist - Album [WAV]"
+#
+# Disc ripping needs --device (the drive) and network (MusicBrainz lookup and
+# AccurateRip verification), unlike the DVD image which runs offline.
+
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+# fdkaac converts tag strings from the locale charset; without UTF-8 here,
+# accented characters (e.g. "Cárcere") are mangled to "??".
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# fdkaac lives in multiverse (FDK-AAC is not free software by distro rules).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends software-properties-common \
+ && add-apt-repository -y multiverse \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      cyanrip flac fdkaac ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY cd-ripper.sh /usr/local/bin/cd-ripper.sh
+RUN chmod +x /usr/local/bin/cd-ripper.sh
+
+ENTRYPOINT ["/usr/local/bin/cd-ripper.sh"]
