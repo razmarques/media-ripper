@@ -64,8 +64,13 @@ docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$MUSIC_ROOT":/music \
   mounted `$MUSIC_ROOT`), in separate trees: `FLAC/…` and `AAC/…`.
 - Layout when metadata is known: `Artist/Album (Year)/NN - Title.ext`. When
   there is no match: `Unknown Artist - Unknown Album/Track NN.ext`.
-- The disc path (cyanrip) has not been tested against a real drive yet; the
-  folder-import path has.
+- Test status: folder import is tested end to end (FLAC verified bit-exact
+  against the WAV; AAC tags incl. accents). The disc path was tested only with
+  a stand-in `cyanrip` (tag read-back, naming, FLAC re-encode, retry without
+  lookup) — **not yet against a real drive**.
+- The container sets `LANG=C.UTF-8`; without it fdkaac mangles accented tags
+  to `??`. Keep it in `Containerfile.cd`.
+- `inputs/` holds WAV test albums and is git-ignored.
 
 ## Standing preferences
 
