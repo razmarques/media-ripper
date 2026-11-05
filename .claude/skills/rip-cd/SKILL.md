@@ -30,6 +30,7 @@ needed:
 | **Format** | `flac` or `aac`. If not stated, ask. `aac` also keeps the FLAC master. |
 | **Barcode** | Best identifier. Digits from the back cover (spaces/dashes are fine). |
 | Artist, album | Only if the folder name isn't `Artist - Album [WAV]` and there's no barcode. |
+| Disc | Only for multi-disc releases, e.g. `2/3`. Ask if the script says so. |
 | Year | Only if the user gives one. Never guess it. |
 | Output folder | Default `./outputs` in the repo root. |
 | Discard FLAC | Only for `aac`, and only if the user asked for it. |
@@ -70,7 +71,7 @@ docker run --rm [--network none] \
   media-ripper-cd:latest \
   --input-dir "/in/<folder name>" --format <flac|aac> \
   [--barcode <digits>] [--lookup] \
-  [--artist "<artist>"] [--album "<album>"] [--year <yyyy>] \
+  [--artist "<artist>"] [--album "<album>"] [--year <yyyy>] [--disc <n/total>] \
   [--discard-master]
 ```
 
@@ -111,8 +112,11 @@ Don't move the files into the library or touch the input WAVs.
 
 ## Notes
 
-- Output layout: `FLAC/Artist/Album (Year)/NN - Title.flac` and
-  `AAC/…/NN - Title.m4a`; unmatched: `Unknown Artist - Unknown Album/Track NN`.
+- Output layout: `FLAC/Artist - Album/NN - Title.flac` and
+  `AAC/Artist - Album/NN - Title.m4a`; multi-disc releases get
+  `Artist - Album - Disc N`; unmatched: `Unknown Artist - Unknown Album/Track NN`.
+- Multi-disc folder imports: ask the user which disc it is and pass
+  `--disc N/TOTAL`. If the script stops asking for `--disc`, ask; never guess.
 - Folder import reads titles from file names like `3.Title.wav`; `Track 3.wav`
   gives a number only. A `cover.jpg` / `folder.jpg` in the folder is embedded.
 - Full option list: run the image with `--help`.

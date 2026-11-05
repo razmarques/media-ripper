@@ -36,9 +36,12 @@ YEAR=""
 DISCARD_MASTER=0
 LOOKUP=0
 BARCODE=""
+DISC=""
+TOTAL_DISCS=""
 OFFSET="${CD_OFFSET:-}"
 OFFSET_SOURCE=""
 FIND_OFFSET=0
+DISC_ARG=""
 ALLOW_UNVERIFIED=0
 
 # Fixed encoder settings -- do not make these configurable.
@@ -85,6 +88,9 @@ Options:
                              artist + album and fill in year and missing
                              track titles. Needs network access and works
                              only if the match has the same track count.
+      --disc <n[/total]>     Disc number for multi-disc releases, e.g. 2/3.
+                             Disc rips read this from the lookup; for a
+                             folder import, pass it yourself.
       --offset <samples>     Drive read offset in samples (or $CD_OFFSET).
                              Required for an accurate rip; if omitted it is
                              found automatically (see "Drive offset" below).
@@ -114,8 +120,9 @@ Folder import:
   A cover.jpg / folder.jpg in the folder is embedded.
 
 Output layout:
-  Metadata known:    <out>/FLAC/Artist/Album (Year)/NN - Title.flac
-  No match / unknown: <out>/FLAC/Unknown Artist - Unknown Album/Track NN.flac
+  One folder per release: <out>/FLAC/Artist - Album/NN - Title.flac
+  Multi-disc releases:    <out>/FLAC/Artist - Album - Disc 2/NN - Title.flac
+  No match / unknown:     <out>/FLAC/Unknown Artist - Unknown Album/Track NN.flac
   (AAC: same under <out>/AAC/, extension .m4a)
 
 Examples:
@@ -142,6 +149,7 @@ parse_flags() {
             --year)           YEAR="${2:-}"; shift 2 ;;
             --barcode)        BARCODE="${2:-}"; LOOKUP=1; shift 2 ;;
             --lookup)         LOOKUP=1; shift ;;
+            --disc)           DISC_ARG="${2:-}"; shift 2 ;;
             --offset)         OFFSET="${2:-}"; shift 2 ;;
             --find-offset)    FIND_OFFSET=1; shift ;;
             --allow-unverified) ALLOW_UNVERIFIED=1; shift ;;
@@ -161,6 +169,15 @@ parse_flags() {
     esac
     if [[ $DISCARD_MASTER -eq 1 && "$FORMAT" != "aac" ]]; then
         die "--discard-master only makes sense with --format aac"
+    fi
+    if [[ -n "$DISC_ARG" ]]; then
+        [[ "$DISC_ARG" =~ ^([0-9]+)(/([0-9]+))?$ ]] || die "--disc must look like 2 or 2/3 (got '$DISC_ARG')"
+        DISC="${BASH_REMATCH[1]}"
+        TOTAL_DISCS="${BASH_REMATCH[3]:-}"
+        [[ "$DISC" -ge 1 ]] || die "--disc number must be 1 or more"
+        if [[ -n "$TOTAL_DISCS" && "$DISC" -gt "$TOTAL_DISCS" ]]; then
+            die "--disc $DISC is greater than the total ($TOTAL_DISCS)"
+        fi
     fi
     if [[ -n "$OFFSET" ]]; then
         OFFSET="${OFFSET#+}"
@@ -312,9 +329,23 @@ lookup_musicbrainz() {
         sleep 1   # MusicBrainz asks for at most 1 request/second
         resp="$(curl -fsS --max-time 20 -A "$ua" -G "$mb/release/$id" \
             --data-urlencode "inc=recordings+artist-credits" --data-urlencode "fmt=json")" || continue
-        titles="$(printf '%s' "$resp" | jq -r --argjson n "$total" \
-            '[.media[]? | select((.tracks | length) == $n)][0] | .tracks[]?.title')"
+        local media
+        media="$(printf '%s' "$resp" | jq -r '.media | length')"
+        if [[ "$media" -gt 1 && -z "$DISC" ]]; then
+            # Several discs and we don't know which one this is: don't guess.
+            if printf '%s' "$resp" | jq -e --argjson n "$total" \
+                '[.media[]? | select((.tracks | length) == $n)] | length > 0' >/dev/null; then
+                TOTAL_DISCS="$media"
+                echo "Release $id has $media discs; pass --disc <n> so the right"
+                echo "track titles are used. Not applying titles."
+                return 0
+            fi
+            continue
+        fi
+        titles="$(printf '%s' "$resp" | jq -r --argjson n "$total" --argjson d "${DISC:-0}" \
+            '[.media[]? | select((.tracks | length) == $n and ($d == 0 or .position == $d))][0] | .tracks[]?.title')"
         [[ -n "$titles" ]] || continue
+        [[ "$media" -gt 1 && -z "$TOTAL_DISCS" ]] && TOTAL_DISCS="$media"
 
         date="$(printf '%s' "$resp" | jq -r '.date // ""')"
         if [[ -n "$BARCODE" ]]; then
@@ -507,6 +538,7 @@ rip_with_cyanrip() {
     local stage="$1" nolookup="$2"
     local args=(-d "$DEVICE" -s "$OFFSET" -o flac -D rip -F "{track}" -L rip -M rip)
     [[ "$nolookup" == "1" ]] && args+=(-N)
+    [[ -n "$DISC" && -n "$TOTAL_DISCS" ]] && args+=(-c "$DISC/$TOTAL_DISCS")
     (cd "$stage" && cyanrip "${args[@]}") 2>&1 | tee "$stage/cyanrip.out"
 }
 
@@ -562,6 +594,21 @@ source_from_disc() {
         [[ "$YEAR" =~ ^[0-9]{4}$ ]] || YEAR=""
     fi
 
+    # Disc number / total (multi-disc releases), unless given with --disc.
+    if [[ -z "$DISC" ]]; then
+        t="$(flac_tag "$first" DISCNUMBER)"
+        [[ -z "$t" ]] && t="$(flac_tag "$first" DISC)"
+        if [[ "$t" =~ ^([0-9]+)(/([0-9]+))?$ ]]; then
+            DISC="${BASH_REMATCH[1]}"
+            [[ -z "$TOTAL_DISCS" ]] && TOTAL_DISCS="${BASH_REMATCH[3]:-}"
+        fi
+    fi
+    if [[ -z "$TOTAL_DISCS" ]]; then
+        t="$(flac_tag "$first" TOTALDISCS)"
+        [[ -z "$t" ]] && t="$(flac_tag "$first" DISCTOTAL)"
+        [[ "$t" =~ ^[0-9]+$ ]] && TOTAL_DISCS="$t"
+    fi
+
     # Cover art embedded by cyanrip, reused for AAC.
     if metaflac --export-picture-to="$WORK_DIR/cover.img" "$first" 2>/dev/null; then
         COVER="$WORK_DIR/cover.img"
@@ -578,12 +625,25 @@ source_from_disc() {
 # Naming
 # ============================================================================
 
+# Single folder: "Artist - Album", plus " - Disc N" for multi-disc releases.
 album_rel_dir() {
+    local name
     if [[ -n "$ARTIST" && -n "$ALBUM" ]]; then
-        printf '%s/%s%s' "$(sanitize "$ARTIST")" "$(sanitize "$ALBUM")" "${YEAR:+ ($YEAR)}"
+        name="$(sanitize "$ARTIST") - $(sanitize "$ALBUM")"
     else
-        printf '%s' "$PLACEHOLDER_DIR"
+        name="$PLACEHOLDER_DIR"
     fi
+    if is_multidisc; then
+        name="$name - Disc $((10#$DISC))"
+    fi
+    printf '%s' "$name"
+}
+
+is_multidisc() {
+    [[ -n "$DISC" ]] || return 1
+    [[ "$((10#$DISC))" -gt 1 ]] && return 0
+    [[ -n "$TOTAL_DISCS" && "$((10#$TOTAL_DISCS))" -gt 1 ]] && return 0
+    return 1
 }
 
 track_basename() {
@@ -622,6 +682,10 @@ encode_flac_master() {
             [[ -n "$ARTIST" ]] && args+=(-T "ARTIST=$ARTIST" -T "ALBUMARTIST=$ARTIST")
             [[ -n "$ALBUM" ]]  && args+=(-T "ALBUM=$ALBUM")
             [[ -n "$YEAR" ]]   && args+=(-T "DATE=$YEAR")
+            if is_multidisc; then
+                args+=(-T "DISCNUMBER=$((10#$DISC))")
+                [[ -n "$TOTAL_DISCS" ]] && args+=(-T "DISCTOTAL=$((10#$TOTAL_DISCS))")
+            fi
             [[ -n "$COVER" ]]  && args+=(--picture="$COVER")
         fi
         echo "  $(basename "$dst")"
@@ -652,6 +716,9 @@ encode_aac_from_master() {
         [[ -n "$ARTIST" ]] && args+=(--artist "$ARTIST" --album-artist "$ARTIST")
         [[ -n "$ALBUM" ]]  && args+=(--album "$ALBUM")
         [[ -n "$YEAR" ]]   && args+=(--date "$YEAR")
+        if is_multidisc; then
+            args+=(--disk "$((10#$DISC))${TOTAL_DISCS:+/$((10#$TOTAL_DISCS))}")
+        fi
         [[ -n "$COVER" ]]  && args+=(--tag-from-file "covr:$COVER")
         echo "  $(basename "$dst")"
         flac -d -c -s "${MASTER_FILES[$i]}" | fdkaac "${args[@]}" -
@@ -705,10 +772,15 @@ else
     source_from_disc
 fi
 
+if [[ -n "$TOTAL_DISCS" && "$((10#$TOTAL_DISCS))" -gt 1 && -z "$DISC" ]]; then
+    die "This is a multi-disc release ($TOTAL_DISCS discs) but the disc number is unknown. Pass --disc <n> (e.g. --disc 2/$TOTAL_DISCS)."
+fi
+
 echo ""
 echo "Artist: ${ARTIST:-<unknown>}"
 echo "Album:  ${ALBUM:-<unknown>}"
 echo "Year:   ${YEAR:-<unknown>}"
+is_multidisc && echo "Disc:   $((10#$DISC))${TOTAL_DISCS:+ of $TOTAL_DISCS}"
 
 encode_flac_master
 

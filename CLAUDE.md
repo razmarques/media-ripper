@@ -62,8 +62,11 @@ docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$MUSIC_ROOT":/music \
   is kept. Encoder settings are fixed by the script — don't change them.
 - Output goes to `--out` (default `/music` inside the container, i.e. the
   mounted `$MUSIC_ROOT`), in separate trees: `FLAC/…` and `AAC/…`.
-- Layout when metadata is known: `Artist/Album (Year)/NN - Title.ext`. When
-  there is no match: `Unknown Artist - Unknown Album/Track NN.ext`.
+- Layout: one flat folder per release, `Artist - Album/NN - Title.ext`, with
+  `- Disc N` appended **only for multi-disc releases** (no year in the folder
+  name; the year is still tagged). When there is no match:
+  `Unknown Artist - Unknown Album/Track NN.ext`. Folder imports of a
+  multi-disc release need `--disc N/TOTAL`; the script refuses to guess.
 - Use the **`rip-cd` skill** to run it: it assembles the `docker run`
   command (mounts, flags, network) from the folder, barcode, artist, album,
   year and format you give it. `--barcode` (printed on the back cover) is the

@@ -95,17 +95,31 @@ Metadata for a folder import:
 | `--allow-unverified` | Keep a rip that AccurateRip did not verify |
 | `--barcode <code>` | Folder import: exact MusicBrainz release by barcode |
 | `--lookup` | Folder import: MusicBrainz text search by artist + album |
+| `--disc <n[/total]>` | Disc number for multi-disc releases, e.g. `2/3` |
 | `--artist`, `--album`, `--year` | Override looked-up or folder-derived metadata |
 | `--discard-master` | With `--format aac`, delete the FLAC afterwards |
 
 ### Output
 
-FLAC and AAC go in separate trees under the output folder:
+One folder per release, named `Artist - Album`. FLAC and AAC go in separate
+trees so the two formats never collide:
 
 ```
-FLAC/Artist/Album (Year)/01 - Title.flac
-AAC/Artist/Album (Year)/01 - Title.m4a
+FLAC/Artist - Album/01 - Title.flac
+AAC/Artist - Album/01 - Title.m4a
 ```
+
+Multi-disc releases (and only those) get a disc suffix, one folder per disc:
+
+```
+FLAC/Artist - Album - Disc 1/01 - Title.flac
+FLAC/Artist - Album - Disc 2/01 - Title.flac
+```
+
+The disc number comes from the disc lookup on a real rip. For a folder
+import, pass `--disc 2/3` (disc 2 of 3). If a release has several discs and
+the disc number is unknown, the script stops and asks for `--disc` instead of
+guessing. `--disc 1` alone, with no total, counts as a single-disc release.
 
 If no metadata is found, everything goes in one placeholder folder:
 
