@@ -10,7 +10,6 @@
 #   2  nothing usable found
 #   3  several different releases fit and none can be preferred
 
-MB_CALLS=0
 ALLOW_TEXT=0                      # allow artist + album text search
 DURATION_TOLERANCE=2              # seconds, per track
 
@@ -35,25 +34,44 @@ def off($tr): [$tr | to_entries[]
    cover_url: (.cover_url // ""),
    label: ([."label-info"[]? | ((.label.name // "?") + " " + (."catalog-number" // ""))] | join("; ")),
    media: $nm, disc: ($med.position // null), status: $status,
-   tracks: ($med.tracks // [] | map({n: .position, title: .title}))}
+   tracks: ($med.tracks // [] | map({n: .position, title: .title,
+             len: (if .length != null then .length / 1000 else null end),
+             artist: ({"artist-credit": (.["artist-credit"] // .recording["artist-credit"] // [])} | credit)}))}
 '
 
-MB_FETCH_FAILED=0
-
-mb_get() { # path, then curl args. Retries: MusicBrainz sometimes answers 503.
-    local path="$1" attempt out; shift
-    MB_CALLS=$((MB_CALLS + 1))
-    [[ $MB_CALLS -gt 1 ]] && sleep 1   # MusicBrainz allows 1 request/second
+# One HTTP GET for MusicBrainz ("mb") or Discogs ("dg"). Prints the body.
+#   0 ok   2 not found (404 is a normal answer: no retry, not an error)
+#   1 failed after retries (network, 429, 5xx); counted for the warning
+# Callers run this inside $(...) and pipelines, which are subshells, so the
+# pause between requests and the failure count live in files under $WORK_DIR,
+# not in variables. CD_HTTP_PAUSE / CD_HTTP_BACKOFF are for the tests.
+http_fetch() { # service, url, curl args...
+    local svc="$1" url="$2" attempt code body hdr=(); shift 2
+    [[ "$svc" == dg && -n "${DISCOGS_TOKEN:-}" ]] && hdr=(-H "Authorization: Discogs token=$DISCOGS_TOKEN")
+    body="$(mktemp "$WORK_DIR/http.XXXXXX")"
+    [[ -e "$WORK_DIR/.rate-$svc" ]] && sleep "${CD_HTTP_PAUSE:-1}"   # about 1 request/second
+    : > "$WORK_DIR/.rate-$svc"
     for attempt in 1 2 3; do
-        if out="$(curl -fsS --max-time 30 -A "$UA" -G "$MB_API/$path" "$@" --data-urlencode "fmt=json" 2>/dev/null)"; then
-            printf '%s' "$out"
-            return 0
-        fi
-        sleep $((attempt * 2))
+        code="$(curl -sS --max-time 30 -A "$UA" ${hdr[@]+"${hdr[@]}"} -G "$url" "$@" \
+                -o "$body" -w '%{http_code}' 2>/dev/null)" || code=000
+        case "$code" in
+            200) cat "$body"; rm -f "$body"; return 0 ;;
+            404) rm -f "$body"; return 2 ;;
+            429|5??|000) ;;                 # worth another try
+            *) break ;;                     # other client errors will not get better
+        esac
+        [[ $attempt -lt 3 ]] && sleep $((attempt * ${CD_HTTP_BACKOFF:-2}))
     done
-    MB_FETCH_FAILED=$((MB_FETCH_FAILED + 1))
+    rm -f "$body"
+    echo x >> "$WORK_DIR/.failed-$svc"
     return 1
 }
+
+fetch_failures() { # service -> number of requests that failed after retries
+    if [[ -f "$WORK_DIR/.failed-$1" ]]; then wc -l < "$WORK_DIR/.failed-$1" | tr -d ' '; else echo 0; fi
+}
+
+mb_get() { http_fetch mb "$MB_API/$1" "${@:2}" --data-urlencode "fmt=json"; }
 
 MB_INC="recordings+artist-credits+labels"
 
@@ -70,7 +88,8 @@ DG_TO_MB_JQ='
 def clean: sub("\\s*\\(\\d+\\)$"; "");
 def ms: if . == null or . == "" then null
         else (try (split(":") | map(tonumber) | reduce .[] as $x (0; . * 60 + $x) | . * 1000) catch null) end;
-def mk($tl): $tl | to_entries | map({position: (.key + 1), title: .value.title, length: (.value.duration | ms)});
+def mk($tl): $tl | to_entries | map({position: (.key + 1), title: .value.title, length: (.value.duration | ms),
+                           "artist-credit": [.value.artists[]? | {name: (.name | clean), joinphrase: (.join // "")}]});
 ([.tracklist[]? | select(.type_ == "track")]) as $tl
 | (if ($tl | length) > 0 and ($tl | all(.position | test("^[0-9]+-[0-9]+$")))
    then ($tl | group_by(.position | split("-")[0] | tonumber)
@@ -88,24 +107,7 @@ def mk($tl): $tl | to_entries | map({position: (.key + 1), title: .value.title, 
    cover_url: ([.images[]? | select(.type == "primary") | .uri][0] // .images[0].uri // "")}
 '
 
-DG_FETCH_FAILED=0
-DG_CALLS=0
-
-dg_get() { # path, then curl args
-    local path="$1" attempt out hdr=(); shift
-    [[ -n "${DISCOGS_TOKEN:-}" ]] && hdr=(-H "Authorization: Discogs token=$DISCOGS_TOKEN")
-    DG_CALLS=$((DG_CALLS + 1))
-    [[ $DG_CALLS -gt 1 ]] && sleep 1
-    for attempt in 1 2 3; do
-        if out="$(curl -fsS --max-time 30 -A "$UA" ${hdr[@]+"${hdr[@]}"} -G "$DG_API/$path" "$@" 2>/dev/null)"; then
-            printf '%s' "$out"
-            return 0
-        fi
-        sleep $((attempt * 2))
-    done
-    DG_FETCH_FAILED=$((DG_FETCH_FAILED + 1))
-    return 1
-}
+dg_get() { http_fetch dg "$DG_API/$1" "${@:2}"; }
 
 dg_fetch_cover() { # image url, dest
     local hdr=()
@@ -182,9 +184,9 @@ mb_fetch_cover() { # release id, dest
 }
 
 mb_resolve() {
-    local total=${#TRACK_SRC[@]} d method methods=() cands evalf ok durs tol
+    local total=${#TRACK_SRC[@]} d method methods=() cands evalf ok durs tol n_failed i
     d="${ARG_DISC:-${FILE_DISC:-0}}"
-    MB_CALLS=0; MB_FETCH_FAILED=0; DG_CALLS=0; DG_FETCH_FAILED=0
+    rm -f "$WORK_DIR"/.rate-* "$WORK_DIR"/.failed-*
 
     need_tools curl jq
     cands="$WORK_DIR/cands.ndjson"; evalf="$WORK_DIR/eval.ndjson"; ok="$WORK_DIR/ok.ndjson"
@@ -208,9 +210,7 @@ mb_resolve() {
         return 2
     fi
 
-    # Track durations in track-number order, as a JSON array.
-    durs="$(for i in "${!TRACK_SRC[@]}"; do printf '%s %s\n' "${TRACK_NUM[$i]}" "${TRACK_DUR[$i]:-null}"; done \
-        | sort -n | awk '{print $2}' | jq -s -c 'map(if . == "null" then null else tonumber end)')"
+    durs="$(files_durations_json)"
 
     for method in "${methods[@]}"; do
         : > "$cands"
@@ -223,8 +223,10 @@ mb_resolve() {
             search)  echo "Searching MusicBrainz for: $MB_ARTIST - $MB_ALBUM ..." ;;
         esac
         mb_collect "$cands" "$method"
-        [[ $MB_FETCH_FAILED -gt 0 ]] && echo "  warning: $MB_FETCH_FAILED MusicBrainz request(s) failed after retries; the result may be incomplete."
-        [[ $DG_FETCH_FAILED -gt 0 ]] && echo "  warning: $DG_FETCH_FAILED Discogs request(s) failed after retries (rate limit? set DISCOGS_TOKEN); the result may be incomplete."
+        n_failed="$(fetch_failures mb)"
+        [[ "$n_failed" -gt 0 ]] && echo "  warning: $n_failed MusicBrainz request(s) failed after retries; the result may be incomplete."
+        n_failed="$(fetch_failures dg)"
+        [[ "$n_failed" -gt 0 ]] && echo "  warning: $n_failed Discogs request(s) failed after retries (rate limit? set DISCOGS_TOKEN); the result may be incomplete."
         [[ -s "$cands" ]] || { echo "  nothing returned."; continue; }
 
         tol="$DURATION_TOLERANCE"; [[ "$method" == "discogs" || "$method" == "dgid" ]] && tol="$DISCOGS_DURATION_TOLERANCE"

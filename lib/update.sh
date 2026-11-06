@@ -33,12 +33,14 @@ file_track_number() { # file -> track number
 # names, and refresh extras/release/cover from the current cover.
 refresh_extras() { # album dir
     local dir="$1" i names=() f
-    if [[ -f "$dir/extras/rip/rip.cue" ]] && compgen -G "$dir/*.flac" >/dev/null; then
+    if compgen -G "$dir/extras/rip/*.cue" >/dev/null && compgen -G "$dir/*.flac" >/dev/null; then
         while IFS= read -r -d '' f; do
             i="$(index_for_track "$(file_track_number "$f")")"
             [[ -n "$i" ]] && names+=("$(basename "$f")")
         done < <(find "$dir" -maxdepth 1 -type f -iname '*.flac' -print0 | sort -zV)
-        [[ ${#names[@]} -gt 0 ]] && rewrite_cue_files "$dir/extras/rip/rip.cue" "${names[@]}"
+        if [[ ${#names[@]} -gt 0 ]]; then
+            for f in "$dir"/extras/rip/*.cue; do rewrite_cue_files "$f" "${names[@]}"; done
+        fi
     fi
     if [[ -n "$COVER" && -f "$COVER" && -d "$dir/extras/release" ]]; then
         rm -f "$dir"/extras/release/cover.*
@@ -92,7 +94,9 @@ apply_to_dir() { # dir
     [[ $APPLY -eq 1 ]] && refresh_extras "$dir"
 
     newdir="$(dirname "$dir")/$(album_rel_dir)"
-    if [[ "$newdir" != "$dir" ]]; then
+    if [[ "$newdir" != "$dir" && "$SRC_KIND" == "library" && $RENAME_FOLDER -eq 0 ]]; then
+        echo "  folder kept: $(basename "$dir")   (add --rename-folder to rename it to $(basename "$newdir"))"
+    elif [[ "$newdir" != "$dir" ]]; then
         if [[ -e "$newdir" ]]; then
             echo "  folder rename SKIPPED: $(basename "$newdir") already exists"
         else
@@ -134,6 +138,7 @@ save_release() { # write release.json (+ cover) into the session
     [[ -n "$SESSION_DIR" ]] || return 0
     ensure_session
     cp "$WORK_DIR/chosen.json" "$SESSION_DIR/release.json"
+    rm -f "$SESSION_DIR/cover.img"      # never keep the previous release's cover
     local got=1
     if [[ "$(jq -r '.source // "musicbrainz"' "$WORK_DIR/chosen.json")" == "discogs" ]]; then
         dg_fetch_cover "$(jq -r '.cover_url // ""' "$WORK_DIR/chosen.json")" "$SESSION_DIR/cover.img" && got=0

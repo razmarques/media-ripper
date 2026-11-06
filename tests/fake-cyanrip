@@ -29,5 +29,7 @@ while IFS= read -r -d '' w; do
 done < <(find "$FAKE_SRC" -maxdepth 1 -name '*.wav' -print0 | sort -zV)
 echo "ripped $n tracks with offset $off"
 echo "Tracks ripped accurately: $n/$n"
-echo "fake rip log" > "$dir/rip.log"
-printf 'FILE "01.flac" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n' > "$dir/rip.cue"
+# FAKE_LOGNAME=weird: the report files get unexpected names, as a real cyanrip might.
+ln="${FAKE_LOGNAME:-rip}"
+echo "fake rip log" > "$dir/$ln.log"
+printf 'FILE "01.flac" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n' > "$dir/$ln.cue"

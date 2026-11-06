@@ -59,6 +59,8 @@ Rules:
   audio** (the raw rip is already removed after a verified encode). The rip log
   and cue move to the AAC folder's `extras/rip/`. Use it only on an explicit
   request, with aac, and say that the lossless copy will be gone.
+- `update` on a library folder renames files but not the folder; add
+  `--rename-folder` only if the user wants the folder renamed.
 - After a verified encode the raw rip audio is removed (`--keep-raw` keeps it);
   the FLAC folder holds the lossless master and `extras/rip/` the log and cue.
 - `--pick earliest` and `--allow-unverified` are the user's decisions: never add
@@ -100,6 +102,8 @@ docker run --rm [--network none] [--device=/dev/sr0] \
   network on. The script finds the drive offset itself; pass `--offset <n>` only
   if the user gives one, or run `--find-offset` once for a new drive. Docker on
   macOS cannot see the drive: say so rather than trying.
+- The output folder **must** be mounted at `/music` (`-v ...:/music`); the script
+  refuses to run without it.
 - Quote every path and value; names contain spaces and accents.
 
 ### 3. Common flows

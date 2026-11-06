@@ -9,7 +9,7 @@ FLAC_OWNED_TAGS=(TITLE ARTIST ALBUMARTIST ALBUM_ARTIST ALBUM DATE TRACKNUMBER
                  TRACKTOTAL TOTALTRACKS DISCNUMBER DISCTOTAL TOTALDISCS DISC)
 
 write_flac_tags() { # file, track index, track total
-    local f="$1" i="$2" total="$3" t
+    local f="$1" i="$2" total="$3" t ta="${TRACK_ARTIST[$2]:-$ARTIST}"
     local rm=() set=()
 
     for t in "${FLAC_OWNED_TAGS[@]}"; do rm+=(--remove-tag="$t"); done
@@ -17,7 +17,8 @@ write_flac_tags() { # file, track index, track total
 
     set+=(--set-tag="TRACKNUMBER=$((10#${TRACK_NUM[$i]}))" --set-tag="TRACKTOTAL=$total")
     [[ -n "${TRACK_TITLE[$i]}" ]] && set+=(--set-tag="TITLE=${TRACK_TITLE[$i]}")
-    [[ -n "$ARTIST" ]] && set+=(--set-tag="ARTIST=$ARTIST" --set-tag="ALBUMARTIST=$ARTIST")
+    [[ -n "$ta" ]]     && set+=(--set-tag="ARTIST=$ta")
+    [[ -n "$ARTIST" ]] && set+=(--set-tag="ALBUMARTIST=$ARTIST")
     [[ -n "$ALBUM" ]]  && set+=(--set-tag="ALBUM=$ALBUM")
     [[ -n "$YEAR" ]]   && set+=(--set-tag="DATE=$YEAR")
     if is_multidisc; then
@@ -33,11 +34,11 @@ write_flac_tags() { # file, track index, track total
 }
 
 write_m4a_tags() { # file, track index, track total
-    local f="$1" i="$2" total="$3"
+    local f="$1" i="$2" total="$3" ta="${TRACK_ARTIST[$2]:-$ARTIST}"
     local args=(--tracknum "$((10#${TRACK_NUM[$i]}))/$total")
 
     args+=(--title "${TRACK_TITLE[$i]}")
-    args+=(--artist "$ARTIST" --albumArtist "$ARTIST")
+    args+=(--artist "$ta" --albumArtist "$ARTIST")
     args+=(--album "$ALBUM")
     args+=(--year "$YEAR")
     if is_multidisc; then

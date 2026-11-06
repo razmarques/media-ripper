@@ -11,6 +11,10 @@
 #     release.json    metadata (written by `match --save`)
 #     cover.img       cover art fetched for release.json
 
+wav_fingerprint() { # folder -> 8 hex chars from the names and sizes of its WAV files
+    find "$1" -maxdepth 1 -type f -iname '*.wav' -printf '%f\t%s\n' | LC_ALL=C sort | sha1sum | cut -c1-8
+}
+
 has_ext() { # dir ext...
     local dir="$1" e; shift
     for e in "$@"; do
@@ -92,7 +96,9 @@ resolve_target() {
         esac
     elif has_ext "$t" wav; then
         SRC_KIND="wav"; SRC_DIR="$t"
-        SESSION_DIR="$OUT_DIR/RIP/$(sanitize "$(basename "$t")")"
+        # Name + a fingerprint of the files, so two different discs that both sit in a
+        # folder called "album" never share a session (release.json, outputs).
+        SESSION_DIR="$OUT_DIR/RIP/$(sanitize "$(basename "$t")")-$(wav_fingerprint "$t")"
     elif has_ext "$t" flac m4a; then
         SRC_KIND="library"; SRC_DIR="$t"; SESSION_DIR=""
     else
@@ -107,7 +113,8 @@ resolve_target() {
 # album-level information their tags / names hold (FILE_*).
 # ----------------------------------------------------------------------------
 load_tracks() {
-    local files=() f idx=0 n t ext first=1 tag
+    local files=() f idx=0 n t ext first=1 tag key a
+    local -A seen=()
 
     while IFS= read -r -d '' f; do
         files+=("$f")
@@ -138,6 +145,17 @@ load_tracks() {
         TRACK_NUM+=("$((10#$n))")
         FILE_TITLE+=("$t")
         TRACK_DUR+=("$(media_duration "$f")")
+        case "$ext" in
+            flac) FILE_TRACK_ARTIST+=("$(flac_tag "$f" ARTIST)") ;;
+            m4a)  FILE_TRACK_ARTIST+=("$(media_tag "$f" artist)") ;;
+            *)    FILE_TRACK_ARTIST+=("") ;;
+        esac
+        key="$ext:$((10#$n))"
+        if [[ -n "${seen[$key]:-}" ]]; then
+            die "Two .$ext files have track number $((10#$n)): '$(basename "${seen[$key]}")' and '$(basename "$f")'.
+  Is this more than one disc in the same folder? Put each disc in its own folder."
+        fi
+        seen[$key]="$f"
 
         if [[ $first -eq 1 ]]; then
             first=0
@@ -146,7 +164,6 @@ load_tracks() {
                     FILE_ALBUM="$(flac_tag "$f" ALBUM)"
                     FILE_ARTIST="$(flac_tag "$f" ALBUMARTIST)"
                     [[ -z "$FILE_ARTIST" ]] && FILE_ARTIST="$(flac_tag "$f" ALBUM_ARTIST)"
-                    [[ -z "$FILE_ARTIST" ]] && FILE_ARTIST="$(flac_tag "$f" ARTIST)"
                     tag="$(flac_tag "$f" DATE)"; FILE_YEAR="${tag:0:4}"
                     tag="$(flac_tag "$f" DISCNUMBER)"
                     if [[ "$tag" =~ ^([0-9]+)(/([0-9]+))?$ ]]; then
@@ -161,7 +178,6 @@ load_tracks() {
                 m4a)
                     FILE_ALBUM="$(media_tag "$f" album)"
                     FILE_ARTIST="$(media_tag "$f" album_artist)"
-                    [[ -z "$FILE_ARTIST" ]] && FILE_ARTIST="$(media_tag "$f" artist)"
                     tag="$(media_tag "$f" date)"; FILE_YEAR="${tag:0:4}"
                     tag="$(media_tag "$f" disc)"
                     if [[ "$tag" =~ ^([0-9]+)(/([0-9]+))?$ ]]; then
@@ -173,6 +189,17 @@ load_tracks() {
         fi
     done
 
+    # No album artist tag: the track artists decide. One artist = that artist;
+    # several different ones = a compilation.
+    if [[ -z "$FILE_ARTIST" ]]; then
+        for a in "${FILE_TRACK_ARTIST[@]}"; do
+            [[ -n "$a" ]] || continue
+            if [[ -z "$FILE_ARTIST" ]]; then FILE_ARTIST="$a"
+            elif [[ "$a" != "$FILE_ARTIST" ]]; then FILE_ARTIST="Various Artists"; break
+            fi
+        done
+    fi
+
     # Raw rips live in a folder called "raw": nothing to learn from its name.
     [[ "$SRC_KIND" == "flac" ]] || parse_folder_name "$SRC_DIR"
     [[ "$SRC_KIND" == "flac" ]] || find_cover "$SRC_DIR"
@@ -183,8 +210,8 @@ load_tracks() {
 # release.json -> RJ_* (the matched MusicBrainz release, if one was saved)
 # ----------------------------------------------------------------------------
 read_release_file() { # file -> RJ_*
-    local f="$1" n t
-    RJ_TITLE=()
+    local f="$1" n t a
+    RJ_TITLE=(); RJ_ARTIST_OF=()
 
     RJ_ARTIST="$(jq -r '.artist // ""' "$f")"
     RJ_ALBUM="$(jq -r '.album // ""' "$f")"
@@ -194,14 +221,40 @@ read_release_file() { # file -> RJ_*
     RJ_MBID="$(jq -r '.mb_release // ""' "$f")"
     RJ_BARCODE="$(jq -r '.barcode // ""' "$f")"
     RJ_METHOD="$(jq -r '.method // ""' "$f")"
-    while IFS=$'\t' read -r n t; do
-        [[ -n "$n" ]] && RJ_TITLE[$n]="$t"
-    done < <(jq -r '.tracks[]? | "\(.n)\t\(.title)"' "$f")
+    while IFS=$'\t' read -r n t a; do
+        [[ -n "$n" ]] || continue
+        RJ_TITLE[$n]="$t"
+        [[ -n "$a" ]] && RJ_ARTIST_OF[$n]="$a"
+    done < <(jq -r '.tracks[]? | "\(.n)\t\(.title)\t\(.artist // "")"' "$f")
     return 0
+}
+
+# Track lengths of the files in track-number order, as a JSON array.
+files_durations_json() {
+    local i
+    for i in "${!TRACK_SRC[@]}"; do printf '%s %s\n' "${TRACK_NUM[$i]}" "${TRACK_DUR[$i]:-null}"; done \
+        | sort -n | awk '{print $2}' | jq -s -c 'map(if . == "null" then null else tonumber end)'
+}
+
+# Does a saved release.json belong to these files? Same track count, and track
+# lengths within tolerance where the release recorded them (loose: Discogs
+# times are user-entered).
+RELEASE_FIT_TOLERANCE=6
+release_fits_files() { # release.json
+    jq -e --argjson n "${#TRACK_SRC[@]}" --argjson durs "$(files_durations_json)" --argjson tol "$RELEASE_FIT_TOLERANCE" '
+        (.tracks // []) as $t
+        | ($t | length) == $n
+          and ([$t | to_entries[]
+                | select(.value.len != null and $durs[.key] != null
+                         and ((.value.len - $durs[.key]) | fabs) > $tol)] | length) == 0' "$1" >/dev/null 2>&1
 }
 
 load_release_json() {
     [[ -n "$SESSION_DIR" && -f "$SESSION_DIR/release.json" ]] || return 0
+    if ! release_fits_files "$SESSION_DIR/release.json"; then
+        echo "Note: ignoring $SESSION_DIR/release.json: it does not fit these files (track count or lengths differ). Run match again for them." >&2
+        return 0
+    fi
     read_release_file "$SESSION_DIR/release.json"
     [[ -f "$SESSION_DIR/cover.img" ]] && COVER="$SESSION_DIR/cover.img"
     return 0
@@ -210,16 +263,21 @@ load_release_json() {
 # Combine file info, release.json and flags: flags win, then release.json,
 # then what the files say.
 finalize_metadata() {
-    local i n
+    local i n a
     ARTIST="${ARG_ARTIST:-${RJ_ARTIST:-$FILE_ARTIST}}"
     ALBUM="${ARG_ALBUM:-${RJ_ALBUM:-$FILE_ALBUM}}"
     YEAR="${ARG_YEAR:-${RJ_YEAR:-$FILE_YEAR}}"
     DISC="${ARG_DISC:-${RJ_DISC:-$FILE_DISC}}"
     TOTAL_DISCS="${ARG_TOTAL_DISCS:-${RJ_TOTAL_DISCS:-$FILE_TOTAL_DISCS}}"
-    TRACK_TITLE=()
+    TRACK_TITLE=(); TRACK_ARTIST=()
     for i in "${!TRACK_SRC[@]}"; do
         n="${TRACK_NUM[$i]}"
         TRACK_TITLE+=("${RJ_TITLE[$n]:-${FILE_TITLE[$i]}}")
+        # --artist beats the release, which beats what the file already says.
+        a="${FILE_TRACK_ARTIST[$i]:-}"
+        [[ -n "${RJ_ARTIST_OF[$n]:-}" ]] && a="${RJ_ARTIST_OF[$n]}"
+        [[ -n "$ARG_ARTIST" ]] && a="$ARG_ARTIST"
+        TRACK_ARTIST+=("$a")
     done
     return 0
 }

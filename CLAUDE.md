@@ -67,6 +67,11 @@ Key ideas:
   `AAC/Artist - Album/…` (flat; ` - Disc N` only for multi-disc; year is tagged
   not in the folder name). No match: `Unknown Artist - Unknown Album/Track NN`.
   Multi-disc needs `--disc N/TOTAL` unless one disc fits the durations.
+- Safety rules: inside a container `rip`/`encode`/`run` refuse to write to an
+  unmounted output folder (`CD_ALLOW_EPHEMERAL=1` overrides); a WAV session is
+  `RIP/<name>-<file fingerprint>`; a `release.json` that doesn't fit the files is
+  ignored; `update` keeps each track's own ARTIST and leaves a library folder's
+  name alone unless `--rename-folder`; duplicate track numbers stop the run.
 - Ambiguous matches stop and list candidates; the user picks with `--mb-release`
   (`--discogs-release` for Discogs) or `--pick earliest`. Never guess a barcode, release ID or year.
 - **Drive offset is never assumed 0.** Order: `--offset`/`$CD_OFFSET` → saved

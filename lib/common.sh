@@ -26,6 +26,7 @@ LOOKUP=0                          # allow text search by artist + album in `run`
 FIND_OFFSET=0
 ALLOW_UNVERIFIED=0
 DISCARD_MASTER=0
+RENAME_FOLDER=0                   # update: also rename a library folder
 KEEP_RAW=0                        # keep RIP/<id>/raw after a verified encode
 SAVE=0                            # match: write release.json
 APPLY=0                           # update: really change files
@@ -56,6 +57,9 @@ TRACK_NUM=()
 TRACK_DUR=()                      # seconds
 FILE_TITLE=()                     # titles found in tags / file names
 TRACK_TITLE=()                    # final titles
+FILE_TRACK_ARTIST=()              # per-track ARTIST found in the files
+TRACK_ARTIST=()                   # final per-track artists
+declare -A RJ_ARTIST_OF=()        # per-track artist from release.json, keyed by track number
 declare -A RJ_TITLE=()            # titles from release.json, keyed by track number
 
 FILE_ARTIST=""; FILE_ALBUM=""; FILE_YEAR=""; FILE_DISC=""; FILE_TOTAL_DISCS=""
@@ -67,7 +71,7 @@ COVER=""
 reset_state() {
     SESSION_DIR=""; SRC_KIND=""; SRC_DIR=""; RAW_GONE=0
     TRACK_SRC=(); TRACK_NUM=(); TRACK_DUR=(); FILE_TITLE=(); TRACK_TITLE=()
-    RJ_TITLE=()
+    RJ_TITLE=(); RJ_ARTIST_OF=(); FILE_TRACK_ARTIST=(); TRACK_ARTIST=()
     FILE_ARTIST=""; FILE_ALBUM=""; FILE_YEAR=""; FILE_DISC=""; FILE_TOTAL_DISCS=""
     RJ_ARTIST="";   RJ_ALBUM="";   RJ_YEAR="";   RJ_DISC="";   RJ_TOTAL_DISCS=""
     RJ_MBID="";     RJ_BARCODE=""; RJ_METHOD=""
@@ -114,6 +118,22 @@ media_tag() {
 # Duration of an audio file in seconds (float), empty on failure.
 media_duration() {
     ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2>/dev/null | head -n 1 || true
+}
+
+# Inside a container the output folder must be a mounted volume, otherwise
+# everything written there disappears when the container exits (--rm).
+require_persistent_out() {
+    [[ -e /.dockerenv || -e /run/.containerenv ]] || return 0
+    [[ "${CD_ALLOW_EPHEMERAL:-}" == 1 ]] && return 0
+    local p mp
+    p="$(readlink -f "$OUT_DIR")"
+    while read -r _ _ _ _ mp _; do
+        mp="$(printf '%b' "$mp")"            # mountinfo writes a space as \040
+        [[ "$mp" == "/" ]] && continue
+        if [[ "$p" == "$mp" || "$p" == "$mp"/* ]]; then return 0; fi
+    done < /proc/self/mountinfo
+    die "The output folder $OUT_DIR is not a mounted volume, so everything written there would be lost when the container exits.
+  Add:  -v \"<host folder>\":$OUT_DIR   (or set CD_ALLOW_EPHEMERAL=1 to run anyway)"
 }
 
 need_tools() {
@@ -209,6 +229,10 @@ parse_flags() {
     local disc_arg=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -f|--format|-i|--input-dir|-o|--out|-d|--device|--artist|--album|--year|--barcode|--mb-release|--discogs-release|--discid|--pick|--disc|--offset)
+                [[ $# -ge 2 ]] || die "Option $1 needs a value." ;;
+        esac
+        case "$1" in
             -f|--format)        FORMAT="${2:-}"; shift 2 ;;
             -i|--input-dir)     INPUT_DIR="${2:-}"; shift 2 ;;
             -o|--out)           OUT_DIR="${2:-}"; shift 2 ;;
@@ -228,6 +252,7 @@ parse_flags() {
             --allow-unverified) ALLOW_UNVERIFIED=1; shift ;;
             --discard-master)   DISCARD_MASTER=1; shift ;;
             --keep-raw)         KEEP_RAW=1; shift ;;
+            --rename-folder)    RENAME_FOLDER=1; shift ;;
             --save)             SAVE=1; shift ;;
             --apply)            APPLY=1; shift ;;
             -h|--help)          show_usage; exit 0 ;;

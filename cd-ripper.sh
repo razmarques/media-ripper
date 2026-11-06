@@ -65,6 +65,8 @@ Options:
       --discard-master       With --format aac: delete the FLAC master afterwards.
                              This removes ALL lossless audio; the rip log and cue
                              then go to the AAC folder's extras/rip/
+      --rename-folder        update: also rename a library folder (rip output
+                             folders are always renamed)
       --keep-raw             Keep RIP/<id>/raw after encoding (normally it is
                              removed once the verified FLAC master exists)
 
@@ -121,6 +123,7 @@ main() {
     esac
 
     parse_flags "$@"
+    if [[ $FIND_OFFSET -eq 1 || "$cmd" =~ ^(rip|encode|run)$ ]]; then require_persistent_out; fi
     mkdir -p "$OUT_DIR"
     WORK_DIR="$(mktemp -d)"
     trap cleanup EXIT

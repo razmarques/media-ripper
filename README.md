@@ -70,8 +70,11 @@ on **any folder of `.flac`/`.m4a` files**, such as an existing library:
 cdr update "/music/Some Artist - Some Album" --mb-release <id> --apply
 ```
 
-The raw rip, `rip.log` and `rip.cue` are never touched by `match`, `update` or
-`encode`.
+`update` keeps each track's own artist (compilations stay intact; with no album
+artist tag, differing track artists make the album "Various Artists"), and only
+changes what the metadata gives or you pass. On a library folder it renames the
+files but **not the folder**, unless you add `--rename-folder`. The raw rip is
+never touched by `match` or `update`.
 
 ### 4. WAV folders (no drive, no network needed)
 
@@ -133,6 +136,7 @@ continues.
 |---|---|
 | `-f, --format flac\|aac` | Encode: `aac` also keeps the FLAC master (default `flac`) |
 | `--discard-master` | With `--format aac`, delete the FLAC afterwards. **Removes all lossless audio**; the rip log and cue move to the AAC folder's `extras/rip/` |
+| `--rename-folder` | `update` on a library folder: also rename the folder to `Artist - Album` (rip output folders are always renamed) |
 | `--keep-raw` | Keep `RIP/<id>/raw` after encoding (normally deleted once the verified FLAC exists) |
 | `-o, --out <dir>` | Output folder (default `/music` in the container) |
 | `-d, --device <path>` | Optical drive (default `/dev/sr0`) |
@@ -160,6 +164,14 @@ FLAC/Unknown Artist - Unknown Album/Track 01.flac no metadata found
 RIP/<id>/rip.json, release.json                    small state files
 RIP/<id>/raw/                                      the raw rip, only until the encode
 ```
+
+Inside a container the output folder must be a mounted volume (`-v ...:/music`):
+otherwise `rip`, `encode` and `run` stop, because everything would be lost when
+the container exits. `CD_ALLOW_EPHEMERAL=1` overrides that. A WAV folder's
+session is `RIP/<folder name>-<fingerprint of its files>`, so two different discs
+that both sit in a folder called `album` never share a release or outputs.
+A saved `release.json` that doesn't fit the files (track count or lengths) is
+ignored with a note.
 
 FLAC and AAC are separate trees so the two formats never collide. The year is
 tagged but not part of the folder name.

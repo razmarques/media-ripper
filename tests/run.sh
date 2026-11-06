@@ -46,10 +46,19 @@ docker run --rm --entrypoint bash -v "$PWD/tests/fixtures":/fx:ro -v "$IN":/in "
 
 # cdr <args>: run the image with the fake cyanrip, our inputs and output.
 cdr() {
-    docker run --rm "${FAKE_NET[@]}" ${EXTRA[@]+"${EXTRA[@]}"} -e FAKE_SRC=/in/album -e CD_DRIVE_ID="TEST - DRIVE" -e CD_OFFSET=6 \
+    docker run --rm "${FAKE_NET[@]}" -e CD_HTTP_PAUSE=0 -e CD_HTTP_BACKOFF=0 ${EXTRA[@]+"${EXTRA[@]}"} -e FAKE_SRC=/in/album -e CD_DRIVE_ID="TEST - DRIVE" -e CD_OFFSET=6 \
         -e FAKE_LOG=/music/fake-calls.log \
         -v "$PWD/tests/fake-cyanrip":/usr/local/bin/cyanrip:ro \
         -v "$IN":/in:ro -v "$OUT":/music "$IMAGE" "$@"
+}
+# synth <host dir under $IN> <tracks> <base seconds>: a WAV album of sine tones.
+synth() {
+    docker run --rm --entrypoint bash -v "$IN":/in "$IMAGE" -c '
+        mkdir -p "/in/$1"
+        for i in $(seq 1 "$2"); do
+            ffmpeg -nostdin -v error -y -f lavfi -i "sine=frequency=$((300 + i * 40)):sample_rate=8000:duration=$(($3 + i))" \
+                -ac 1 -c:a pcm_s16le "/in/$1/Track $i.wav"
+        done' _ "$1" "$2" "$3"
 }
 # tool <cmd...>: run a tool from the image against $OUT.
 tool() { docker run --rm --entrypoint "$1" -v "$OUT":/music:ro "$IMAGE" "${@:2}"; }
@@ -137,9 +146,12 @@ check "AAC gapless info survived"          bash -c "docker run --rm --entrypoint
 echo "== 5. update a plain library folder (no rip folder)"
 LIB="$OUT/lib"; mkdir -p "$LIB"; cp -R "$OUT/AAC/Gerry Mulligan Quartet - Night Lights" "$LIB/messy folder"
 for f in "$LIB/messy folder"/*.m4a; do mv "$f" "$LIB/messy folder/$(basename "$f" | sed 's/^\([0-9]*\) - .*/\1 x.m4a/')"; done
-docker run --rm "${FAKE_NET[@]}" -v "$OUT":/music "$IMAGE" update "/music/lib/messy folder" --barcode "$BARCODE" --artist "Gerry Mulligan" --apply >"$T/u3.log" 2>&1
-check "library folder renamed from metadata" test -d "$LIB/Gerry Mulligan - Night Lights"
-check "library files renamed with titles"  bash -c "ls '$LIB/Gerry Mulligan - Night Lights'/01\ -\ Night*.m4a"
+LIBUP=(docker run --rm "${FAKE_NET[@]}" -e CD_HTTP_PAUSE=0 -v "$OUT":/music "$IMAGE" update "/music/lib/messy folder" --barcode "$BARCODE" --artist "Gerry Mulligan" --apply)
+"${LIBUP[@]}" >"$T/u3.log" 2>&1
+check "library files renamed with titles"  bash -c "ls '$LIB/messy folder'/01\ -\ Night*.m4a"
+check "library folder kept by default"     test -d "$LIB/messy folder"
+"${LIBUP[@]}" --rename-folder >"$T/u4.log" 2>&1
+check "library folder renamed with --rename-folder" test -d "$LIB/Gerry Mulligan - Night Lights"
 
 echo "== 6. run with no match: encodes, never re-rips, prints the fix"
 rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"; : > "$OUT/fake-calls.log"
@@ -177,6 +189,70 @@ cdr run --format aac --barcode "$BARCODE" --discard-master >"$T/k2.log" 2>&1
 check "FLAC folder discarded"              test ! -d "$OUT/FLAC/Gerry Mulligan - Night Lights"
 check "reports kept in the AAC folder"     test -f "$AACDIR/extras/rip/rip.log" -a -f "$AACDIR/extras/rip/rip.cue"
 check "no raw audio left"                  bash -c "! ls '$OUT'/RIP/*/raw/*.flac"
+
+echo "== 11. review fixes"
+echo "-- two different discs in folders called 'album' never share a session or a release"
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+cdr run /in/album --barcode "$BARCODE" >"$T/s1.log" 2>&1
+synth b/album 4 20
+cdr encode /in/b/album >"$T/s2.log" 2>&1
+check "second disc is not named after the first"  test -d "$OUT/FLAC/Unknown Artist - Unknown Album"
+check "first disc's output is still there"        test -d "$OUT/FLAC/Gerry Mulligan - Night Lights"
+check "two separate sessions"                     bash -c "[ \$(ls '$OUT/RIP' | wc -l) -eq 2 ]"
+SB="$(ls -d "$OUT"/RIP/album-* | while read -r d; do grep -q '/in/b/album' "$d/rip.json" && echo "$d"; done)"
+cp "$(ls -d "$OUT"/RIP/album-* | grep -v "$SB" | head -1)/release.json" "$SB/release.json"
+rm -rf "$OUT/FLAC/Unknown Artist - Unknown Album"
+cdr encode "/music/RIP/$(basename "$SB")" >"$T/s3.log" 2>&1
+check "a release that does not fit the files is ignored" grep -q 'does not fit these files' "$T/s3.log"
+check "...and the files get placeholder names"    test -d "$OUT/FLAC/Unknown Artist - Unknown Album"
+
+echo "-- update keeps each track's own artist (compilation)"
+docker run --rm --entrypoint bash -v "$OUT":/music "$IMAGE" -c '
+    mkdir -p /music/lib2/comp
+    for i in 1 2 3; do
+        ffmpeg -nostdin -v error -y -f lavfi -i "sine=frequency=$((300 + i * 40)):sample_rate=8000:duration=3" -ac 1 /tmp/t$i.wav
+        flac -s -f -o "/music/lib2/comp/0$i.flac" /tmp/t$i.wav -T "ARTIST=Artist $i" -T ALBUM=Compilation -T "TITLE=Song $i" -T "TRACKNUMBER=$i" 2>/dev/null
+    done' >/dev/null 2>&1
+cdr update /music/lib2/comp --apply >"$T/c1.log" 2>&1
+check "each track keeps its own artist"          bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ARTIST '/m/lib2/comp/02 - Song 2.flac' | grep -q 'Artist 2'"
+check "album artist becomes Various Artists"     bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ALBUMARTIST '/m/lib2/comp/02 - Song 2.flac' | grep -q 'Various Artists'"
+
+echo "-- duplicate track numbers stop with a clear message"
+docker run --rm --entrypoint bash -v "$IN":/in "$IMAGE" -c 'mkdir -p /in/dup; cp "/in/album/Track 1.wav" "/in/dup/1.Intro.wav"; cp "/in/album/Track 2.wav" "/in/dup/01 Other.wav"'
+cdr encode /in/dup >"$T/d2.log" 2>&1
+check "duplicate numbers rejected"               grep -q 'Two .wav files have track number 1' "$T/d2.log"
+
+echo "-- output outside a mounted volume is refused"
+docker run --rm -v "$IN":/in:ro "$IMAGE" encode /in/album >"$T/mnt.log" 2>&1
+check "refuses to write into the container"      grep -q 'not a mounted volume' "$T/mnt.log"
+docker run --rm -e CD_ALLOW_EPHEMERAL=1 -v "$IN":/in:ro "$IMAGE" encode /in/album >"$T/mnt2.log" 2>&1
+check "CD_ALLOW_EPHEMERAL=1 overrides"           grep -q 'Done' "$T/mnt2.log"
+
+echo "-- an option without a value says so"
+docker run --rm -v "$OUT":/music "$IMAGE" encode /music --format >"$T/o1.log" 2>&1
+check "missing value explained"                  grep -q 'needs a value' "$T/o1.log"
+
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+cdr rip >"$T/rip2.log" 2>&1
+RIPDIR_DISC="/music/RIP/$(ls "$OUT/RIP" | head -1)"
+echo "-- network: 404 is quiet, 503 is reported, requests are spaced"
+cdr match "$RIPDIR_DISC" --barcode "$BARCODE" >"$T/n1.log" 2>&1
+check "unknown disc ID (404) raises no warning"  bash -c "! grep -q 'failed after retries' '$T/n1.log'"
+EXTRA=(-e FAKE_MB_503=1)
+cdr match "$RIPDIR_DISC" --barcode "$BARCODE" >"$T/n2.log" 2>&1
+check "503 is reported after retries"            grep -q 'MusicBrainz request(s) failed after retries' "$T/n2.log"
+EXTRA=(-e CD_HTTP_PAUSE=1)
+t0=$(date +%s); cdr match "$RIPDIR_DISC" --barcode "$BARCODE" >"$T/n3.log" 2>&1; t1=$(date +%s)
+check "requests are about a second apart (>= 3 s for 4 requests)" test $((t1 - t0)) -ge 3
+EXTRA=()
+
+echo "-- reports follow whatever names cyanrip uses"
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+EXTRA=(-e FAKE_LOGNAME=weird)
+cdr run --format flac --barcode "$BARCODE" >"$T/w1.log" 2>&1
+EXTRA=()
+check "differently named log and cue reach extras/rip" test -f "$OUT/FLAC/Gerry Mulligan - Night Lights/extras/rip/weird.log" -a -f "$OUT/FLAC/Gerry Mulligan - Night Lights/extras/rip/weird.cue"
+check "nothing left behind in RIP/"              bash -c "! ls '$OUT'/RIP/*/raw 2>/dev/null"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then echo "All checks passed."; else echo "$FAIL check(s) FAILED. Logs kept in $T"; trap - EXIT; exit 1; fi

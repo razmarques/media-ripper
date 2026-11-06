@@ -64,16 +64,15 @@ cover_ext() { # cover file -> png | jpg
 # folder the cue's FILE names are pointed at the tracks; for the AAC folder
 # (only when the FLAC is discarded) the cue is kept as it is.
 write_extras() { # album dir, flac|m4a
-    local dir="$1" ext="$2" ex="$1/extras" f names=() i
+    local dir="$1" ext="$2" ex="$1/extras" f names=() i cue
     [[ "$SRC_KIND" == "flac" && $RAW_GONE -eq 0 ]] || return 0
     mkdir -p "$ex/rip"
-    for f in "$SESSION_DIR/raw/rip.log" "$SESSION_DIR/raw/rip.cue" \
-             "$SESSION_DIR/cyanrip-output.txt" "$SESSION_DIR/disc-info.txt"; do
-        [[ -f "$f" ]] && cp "$f" "$ex/rip/$(basename "$f")"
-    done
-    if [[ "$ext" == "flac" && -f "$ex/rip/rip.cue" ]]; then
+    while IFS= read -r -d '' f; do cp "$f" "$ex/rip/$(basename "$f")"; done < <(report_files)
+    if [[ "$ext" == "flac" ]]; then
         for i in "${!TRACK_SRC[@]}"; do names+=("$(track_basename "$i").flac"); done
-        rewrite_cue_files "$ex/rip/rip.cue" "${names[@]}"
+        for cue in "$ex"/rip/*.cue; do
+            [[ -f "$cue" ]] && rewrite_cue_files "$cue" "${names[@]}"
+        done
     fi
     if [[ -n "$COVER" && -f "$COVER" ]]; then
         mkdir -p "$ex/release"
@@ -81,19 +80,35 @@ write_extras() { # album dir, flac|m4a
     fi
 }
 
+# Everything that documents the rip: every non-audio file cyanrip left next to
+# the tracks (log, cue, whatever it calls them) plus its console output and the
+# disc info. NUL-separated. Matching by "not a .flac" rather than by name means a
+# different file name on a real drive cannot make a report get left behind.
+report_files() {
+    local f
+    if [[ -d "$SESSION_DIR/raw" ]]; then
+        find "$SESSION_DIR/raw" -maxdepth 1 -type f ! -iname '*.flac' -print0
+    fi
+    for f in cyanrip-output.txt disc-info.txt; do
+        if [[ -f "$SESSION_DIR/$f" ]]; then printf '%s\0' "$SESSION_DIR/$f"; fi
+    done
+    return 0
+}
+
 # Delete the raw FLACs once every track has a verified FLAC in the master
 # folder, together with the originals of the reports copied by write_extras.
 # --keep-raw skips it.
 remove_raw() {
-    local n_out
+    local n_out f
     [[ "$SRC_KIND" == "flac" && $RAW_GONE -eq 0 && $KEEP_RAW -eq 0 ]] || return 0
     n_out="$(find "$OUT_DIR/$MASTER_REL" -maxdepth 1 -type f -name '*.flac' | wc -l)"
     if [[ "$((n_out))" -ne "${#TRACK_SRC[@]}" ]]; then
         echo "Keeping the raw rip: expected ${#TRACK_SRC[@]} FLAC files in $MASTER_REL, found $((n_out))."
         return 0
     fi
-    rm -f "${TRACK_SRC[@]}" "$SESSION_DIR/raw/rip.log" "$SESSION_DIR/raw/rip.cue" \
-        "$SESSION_DIR/cyanrip-output.txt" "$SESSION_DIR/disc-info.txt"
+    local reports=()
+    while IFS= read -r -d '' f; do reports+=("$f"); done < <(report_files)
+    rm -f "${TRACK_SRC[@]}" ${reports[@]+"${reports[@]}"}
     rmdir "$SESSION_DIR/raw" 2>/dev/null || true
     echo "Removed the raw FLAC copy (the verified FLAC in $MASTER_REL replaces it)."
 }
