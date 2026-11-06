@@ -29,6 +29,24 @@ file_track_number() { # file -> track number
     printf '%s' "$((10#$n))"
 }
 
+# After the tracks were renamed: point the cue sheet in extras/rip/ at the new
+# names, and refresh extras/release/cover from the current cover.
+refresh_extras() { # album dir
+    local dir="$1" i names=() f
+    if [[ -f "$dir/extras/rip/rip.cue" ]] && compgen -G "$dir/*.flac" >/dev/null; then
+        while IFS= read -r -d '' f; do
+            i="$(index_for_track "$(file_track_number "$f")")"
+            [[ -n "$i" ]] && names+=("$(basename "$f")")
+        done < <(find "$dir" -maxdepth 1 -type f -iname '*.flac' -print0 | sort -zV)
+        [[ ${#names[@]} -gt 0 ]] && rewrite_cue_files "$dir/extras/rip/rip.cue" "${names[@]}"
+    fi
+    if [[ -n "$COVER" && -f "$COVER" && -d "$dir/extras/release" ]]; then
+        rm -f "$dir"/extras/release/cover.*
+        cp "$COVER" "$dir/extras/release/cover.$(cover_ext "$COVER")"
+    fi
+    return 0
+}
+
 # Retag and rename the FLAC/M4A files in one folder, then the folder itself.
 apply_to_dir() { # dir
     local dir="$1" f ext n i newbase newpath total old_rel new_rel newdir files=()
@@ -70,11 +88,8 @@ apply_to_dir() { # dir
         fi
     done
 
-    # Keep the extras/ copy of the rip log + cue in step with the new names.
-    if [[ $APPLY -eq 1 && "$SRC_KIND" == "flac" ]]; then
-        ext="${files[0]##*.}"; ext="${ext,,}"
-        write_extras "$dir" "$ext"
-    fi
+    # Keep extras/ in step with the new names (cue FILE lines, cover).
+    [[ $APPLY -eq 1 ]] && refresh_extras "$dir"
 
     newdir="$(dirname "$dir")/$(album_rel_dir)"
     if [[ "$newdir" != "$dir" ]]; then

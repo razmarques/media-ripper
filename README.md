@@ -127,7 +127,8 @@ continues.
 | Option | Meaning |
 |---|---|
 | `-f, --format flac\|aac` | Encode: `aac` also keeps the FLAC master (default `flac`) |
-| `--discard-master` | With `--format aac`, delete the FLAC afterwards (the rip folder is never deleted) |
+| `--discard-master` | With `--format aac`, delete the FLAC afterwards. **Removes all lossless audio**; the rip log and cue move to the AAC folder's `extras/rip/` |
+| `--keep-raw` | Keep `RIP/<id>/raw` after encoding (normally deleted once the verified FLAC exists) |
 | `-o, --out <dir>` | Output folder (default `/music` in the container) |
 | `-d, --device <path>` | Optical drive (default `/dev/sr0`) |
 | `--mb-release <id>` | Use exactly this MusicBrainz release |
@@ -144,22 +145,29 @@ continues.
 ### Output
 
 ```
-RIP/<id>/raw/           the lossless rip + rip.log + rip.cue (never renamed or deleted)
-RIP/<id>/rip.json       drive, offset, AccurateRip result, disc ID, encoded folders
-RIP/<id>/release.json   the matched metadata (after match --save)
 FLAC/Artist - Album/01 - Title.flac
-FLAC/Artist - Album/extras/   rip.log, rip.cue, cyanrip-output.txt (disc rips only)
+FLAC/Artist - Album/extras/rip/       rip.log, rip.cue, cyanrip-output.txt, disc-info.txt
+FLAC/Artist - Album/extras/release/   cover.jpg (booklets you add go here too)
 AAC/Artist - Album/01 - Title.m4a
-AAC/Artist - Album/extras/    same, so the record moves with the folder
 FLAC/Artist - Album - Disc 2/...                  multi-disc releases only
 FLAC/Unknown Artist - Unknown Album/Track 01.flac no metadata found
+RIP/<id>/rip.json, release.json                    small state files
+RIP/<id>/raw/                                      the raw rip, only until the encode
 ```
 
 FLAC and AAC are separate trees so the two formats never collide. The year is
-tagged but not part of the folder name. `extras/` is a copy: the originals stay in
-`RIP/<id>/`. In the FLAC copy the cue's file names point at the renamed tracks
-(`../01 - Title.flac`); `update` keeps them in step. In the AAC copy the cue is
-unchanged, since it describes the lossless rip.
+tagged but not part of the folder name.
+
+One lossless copy, one copy of the reports. `rip` writes the raw rip to
+`RIP/<id>/raw/` so a failed match never costs a re-rip. Once `encode` has made
+the verified FLAC (`flac -V`), the raw audio is deleted (`--keep-raw` keeps it)
+and `rip.log`, `rip.cue` and the other reports are stored in the FLAC album
+folder's `extras/rip/`, so they travel with the music into the library. The cue's
+file names point at the tracks (`../../01 - Title.flac`); `update` keeps them in
+step when it renames. The AAC folder has no `extras/`, unless you discard the
+FLAC (`--discard-master`, which removes all lossless audio): then the reports go
+to the AAC folder. A later `encode --format aac` on the same rip is built from
+the FLAC folder; the FLAC is never re-encoded.
 
 ### Status and limits
 

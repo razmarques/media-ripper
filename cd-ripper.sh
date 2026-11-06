@@ -62,8 +62,11 @@ Options:
   -i, --input-dir <dir>      Folder of WAV files (same as giving the folder)
   -o, --out <dir>            Output folder (default \$CD_OUT_DIR or /music)
   -d, --device <path>        Optical drive (default \$CD_DEVICE or /dev/sr0)
-      --discard-master       With --format aac: delete the FLAC master afterwards
-                             (the rip folder, log and cue are never deleted)
+      --discard-master       With --format aac: delete the FLAC master afterwards.
+                             This removes ALL lossless audio; the rip log and cue
+                             then go to the AAC folder's extras/rip/
+      --keep-raw             Keep RIP/<id>/raw after encoding (normally it is
+                             removed once the verified FLAC master exists)
 
   Metadata (flags always win over what was found):
       --mb-release <id>      Use exactly this MusicBrainz release
@@ -88,9 +91,11 @@ the value saved for this drive (<out>/.cd-ripper/drive-offsets.tsv), the
 AccurateRip drive database, then measured from the disc (cyanrip -f).
 
 Output:
-  <out>/RIP/<id>/...                       raw rip, rip.log, rip.cue, rip.json,
-                                           release.json
+  <out>/RIP/<id>/raw/                      the raw rip (removed after a verified encode)
+  <out>/RIP/<id>/rip.json, release.json    small state files, kept
   <out>/FLAC/Artist - Album/NN - Title.flac
+  <out>/FLAC/Artist - Album/extras/rip/    rip.log, rip.cue, ... (stored once, here)
+  <out>/FLAC/Artist - Album/extras/release/  cover.jpg
   <out>/AAC/Artist - Album/NN - Title.m4a
   Multi-disc: "Artist - Album - Disc 2".   Unknown: "Unknown Artist - Unknown Album".
 

@@ -25,6 +25,7 @@ LOOKUP=0                          # allow text search by artist + album in `run`
 FIND_OFFSET=0
 ALLOW_UNVERIFIED=0
 DISCARD_MASTER=0
+KEEP_RAW=0                        # keep RIP/<id>/raw after a verified encode
 SAVE=0                            # match: write release.json
 APPLY=0                           # update: really change files
 
@@ -47,6 +48,7 @@ WORK_DIR=""
 SESSION_DIR=""                    # <out>/RIP/<id>, holds rip.json / release.json
 SRC_KIND=""                       # flac (raw rip) | wav | library
 SRC_DIR=""                        # directory holding the audio files
+RAW_GONE=0                        # 1: raw rip was removed; SRC_DIR is the FLAC folder
 
 TRACK_SRC=()
 TRACK_NUM=()
@@ -62,7 +64,7 @@ ARTIST=""; ALBUM=""; YEAR=""; DISC=""; TOTAL_DISCS=""
 COVER=""
 
 reset_state() {
-    SESSION_DIR=""; SRC_KIND=""; SRC_DIR=""
+    SESSION_DIR=""; SRC_KIND=""; SRC_DIR=""; RAW_GONE=0
     TRACK_SRC=(); TRACK_NUM=(); TRACK_DUR=(); FILE_TITLE=(); TRACK_TITLE=()
     RJ_TITLE=()
     FILE_ARTIST=""; FILE_ALBUM=""; FILE_YEAR=""; FILE_DISC=""; FILE_TOTAL_DISCS=""
@@ -223,6 +225,7 @@ parse_flags() {
             --find-offset)      FIND_OFFSET=1; shift ;;
             --allow-unverified) ALLOW_UNVERIFIED=1; shift ;;
             --discard-master)   DISCARD_MASTER=1; shift ;;
+            --keep-raw)         KEEP_RAW=1; shift ;;
             --save)             SAVE=1; shift ;;
             --apply)            APPLY=1; shift ;;
             -h|--help)          show_usage; exit 0 ;;

@@ -3,8 +3,10 @@
 # metadata from files, release.json and flags into one answer.
 #
 #   <out>/RIP/<id>/
-#     raw/            lossless rip + rip.log + rip.cue, never renamed
-#     cyanrip-output.txt
+#     raw/            lossless rip + rip.log + rip.cue; after a verified encode the
+#                     audio is removed and the reports move to extras/rip/ of the
+#                     FLAC album folder (see encode.sh)
+#     cyanrip-output.txt, disc-info.txt   (also moved to extras/rip/)
 #     rip.json        facts about the rip + list of deliverable folders
 #     release.json    metadata (written by `match --save`)
 #     cover.img       cover art fetched for release.json
@@ -62,7 +64,7 @@ rip_json_rename_output() { # old rel dir, new rel dir
 #   - a library folder of FLAC/M4A files (no session)
 # ----------------------------------------------------------------------------
 resolve_target() {
-    local t="$TARGET" kind
+    local t="$TARGET" kind rel
     [[ -n "$t" ]] || die "No folder given. Pass a folder, or use --input-dir."
     [[ -d "$t" ]] || die "Folder not found: $t"
     t="$(cd "$t" && pwd)"
@@ -72,7 +74,15 @@ resolve_target() {
         kind="$(jq -r '.source // ""' "$t/rip.json")"
         case "$kind" in
             disc)
-                SRC_KIND="flac"; SRC_DIR="$t/raw" ;;
+                SRC_KIND="flac"; SRC_DIR="$t/raw"
+                if [[ ! -d "$t/raw" ]] || ! has_ext "$t/raw" flac; then
+                    # The raw audio was removed after a verified encode: the FLAC
+                    # master in the output tree is the lossless source now.
+                    rel="$(jq -r '[.outputs[]? | select(.format == "flac") | .dir][0] // ""' "$t/rip.json")"
+                    [[ -n "$rel" && -d "$OUT_DIR/$rel" ]] \
+                        || die "No raw rip in $t and no FLAC folder recorded for it (was it moved or discarded?)."
+                    SRC_DIR="$OUT_DIR/$rel"; RAW_GONE=1
+                fi ;;
             wav)
                 SRC_KIND="wav"
                 SRC_DIR="${INPUT_DIR:-$(jq -r '.source_path // ""' "$t/rip.json")}"

@@ -55,10 +55,13 @@ Key ideas:
   a rip folder or any folder of `.flac`/`.m4a` files.
 - `encode` makes the FLAC master (`flac -8 --verify`) and, with `--format aac`,
   AAC derived from it (`fdkaac -m 5`). Encoder settings are fixed — don't change
-  them. `--discard-master` removes only the FLAC deliverable; `RIP/` (log, cue)
-  is never deleted. Disc rips also copy `rip.log`, `rip.cue` and
-  `cyanrip-output.txt` into each album folder's `extras/`, so the rip record
-  travels with the music when the folder is moved into the library.
+  them. One lossless copy: after a verified encode the raw rip audio in
+  `RIP/<id>/raw/` is deleted (`--keep-raw` keeps it) and `rip.log`, `rip.cue`,
+  `cyanrip-output.txt` are stored once in the FLAC album folder's `extras/rip/`
+  (cover in `extras/release/`), so the record travels with the music. `RIP/<id>/`
+  keeps only `rip.json` / `release.json`. `--discard-master` removes ALL lossless
+  audio and puts the reports in the AAC folder's `extras/rip/`. A later
+  `encode --format aac` is built from the existing FLAC folder, never re-encoding it.
 - Output: separate trees `FLAC/Artist - Album/NN - Title.flac` and
   `AAC/Artist - Album/…` (flat; ` - Disc N` only for multi-disc; year is tagged
   not in the folder name). No match: `Unknown Artist - Unknown Album/Track NN`.

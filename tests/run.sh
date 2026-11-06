@@ -49,7 +49,6 @@ check "rip.log and rip.cue kept in raw/"   test -f "$RIPDIR/raw/rip.log" -a -f "
 check "rip.json says disc / verified"      grep -q '"verify": "verified"' "$RIPDIR/rip.json"
 check "disc ID recorded"                   grep -q 'AAAAAAAAAAAAAAAAAAAAAAAAAAA-' "$RIPDIR/rip.json"
 check "rip never asked for a lookup"       bash -c "! grep -q 'MusicBrainz lookup' '$T/rip.log'"
-RAW_BEFORE="$(sums "$RIPDIR/raw")"
 
 echo "== 2. match: preview, wrong release rejected, then save"
 cdr match "$RIP" --barcode "$BARCODE" >"$T/m1.log" 2>&1
@@ -69,12 +68,26 @@ FLACDIR="$OUT/FLAC/Gerry Mulligan - Night Lights"; AACDIR="$OUT/AAC/Gerry Mullig
 check "flat FLAC folder, named tracks"     bash -c "ls '$FLACDIR'/01\ -\ *.flac"
 check "AAC folder with 7 tracks"           bash -c "[ \$(ls '$AACDIR'/*.m4a | wc -l) -eq 7 ]"
 check "FLAC tagged with title"             bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=TITLE '/m/FLAC/Gerry Mulligan - Night Lights/01 - Night Lights (1963 version).flac' | grep -q 'Night Lights'"
-check "extras/ holds rip.log and rip.cue (FLAC)" test -f "$FLACDIR/extras/rip.log" -a -f "$FLACDIR/extras/rip.cue"
-check "extras/ holds rip.log and rip.cue (AAC)"  test -f "$AACDIR/extras/rip.log" -a -f "$AACDIR/extras/rip.cue"
-check "FLAC cue points at the renamed tracks"    grep -q '"\.\./01 - ' "$FLACDIR/extras/rip.cue"
+check "reports stored in the FLAC folder's extras/rip/" bash -c "test -f '$FLACDIR/extras/rip/rip.log' -a -f '$FLACDIR/extras/rip/rip.cue' -a -f '$FLACDIR/extras/rip/cyanrip-output.txt'"
+check "AAC folder has no extras (no duplicate)"  test ! -e "$AACDIR/extras"
+check "cover saved in extras/release/"           test -f "$FLACDIR/extras/release/cover.jpg"
+check "cue points at the renamed tracks"         grep -q '"\.\./\.\./01 - ' "$FLACDIR/extras/rip/rip.cue"
+check "raw FLACs removed after verified encode"  bash -c "! ls '$RIPDIR'/raw/*.flac"
+check "no report copies left in RIP/"            bash -c "test ! -e '$RIPDIR/raw/rip.log' -a ! -e '$RIPDIR/cyanrip-output.txt'"
+check "rip.json and release.json kept"           test -f "$RIPDIR/rip.json" -a -f "$RIPDIR/release.json"
 check "rip.json lists both outputs"        bash -c "[ \$(grep -c '\"dir\"' '$RIPDIR/rip.json') -eq 2 ]"
 
-echo "== 4. fix metadata without touching raw rip or audio"
+echo "== 3b. raw already removed: a second encode still works and leaves the FLAC alone"
+FSUM="$(sums "$FLACDIR")"
+cdr encode "$RIP" --format aac >"$T/e2.log" 2>&1
+check "AAC rebuilt from the existing FLAC"       bash -c "[ \$(ls '$AACDIR'/*.m4a | wc -l) -eq 7 ]"
+check "FLAC folder byte-identical (not re-encoded)" test "$FSUM" = "$(sums "$FLACDIR")"
+cdr encode "$RIP" --format flac >"$T/e3.log" 2>&1
+check "--format flac refuses, points to update"  grep -q 'already exists' "$T/e3.log"
+check "FLAC still intact after the refusal"      test "$FSUM" = "$(sums "$FLACDIR")"
+
+echo "== 4. fix metadata without touching audio or reports"
+LOG_BEFORE="$(shasum "$FLACDIR/extras/rip/rip.log" | cut -d' ' -f1)"
 FLAC1="$(ls "$FLACDIR"/01*.flac)"; A_BEFORE="$(audio_md5 "/music/FLAC/Gerry Mulligan - Night Lights/$(basename "$FLAC1")")"
 cdr update "$RIP" --artist "Gerry Mulligan Quartet" >"$T/u1.log" 2>&1
 check "update preview changes nothing"     test -d "$FLACDIR"
@@ -82,10 +95,11 @@ cdr update "$RIP" --artist "Gerry Mulligan Quartet" --apply >"$T/u2.log" 2>&1
 NEWF="$OUT/FLAC/Gerry Mulligan Quartet - Night Lights"
 check "folder renamed on --apply"          test -d "$NEWF"
 check "AAC folder renamed too"             test -d "$OUT/AAC/Gerry Mulligan Quartet - Night Lights"
-check "extras/ moved with the folder"      test -f "$NEWF/extras/rip.cue"
 A_AFTER="$(audio_md5 "/music/FLAC/Gerry Mulligan Quartet - Night Lights/$(basename "$FLAC1")")"
 check "audio stream byte-identical after update" test "$A_BEFORE" = "$A_AFTER"
-check "raw rip, log and cue untouched"     test "$RAW_BEFORE" = "$(sums "$RIPDIR/raw")"
+check "extras/ moved with the folder"      test -f "$NEWF/extras/rip/rip.cue"
+check "rip.log byte-identical"             test "$LOG_BEFORE" = "$(shasum "$NEWF/extras/rip/rip.log" | cut -d' ' -f1)"
+check "cue FILE names follow the new names" grep -q '"\.\./\.\./01 - ' "$NEWF/extras/rip/rip.cue"
 check "AAC gapless info survived"          bash -c "docker run --rm --entrypoint bash -v '$OUT':/m:ro $IMAGE -c 'ffprobe -v error -show_entries format_tags=iTunSMPB -of default=nw=1 /m/AAC/*Quartet*/01*.m4a | grep -q iTunSMPB'"
 
 echo "== 5. update a plain library folder (no rip folder)"
@@ -120,6 +134,17 @@ rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
 docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$OUT":/music "$IMAGE" \
     encode "/in/Gerry Mulligan - Night Lights [WAV]" --disc 2/3 >"$T/d1.log" 2>&1
 check "Disc suffix only on multi-disc"     test -d "$OUT/FLAC/Gerry Mulligan - Night Lights - Disc 2"
+
+echo "== 10. --keep-raw keeps the raw rip; --discard-master moves the reports to the AAC folder"
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+cdr run --format aac --barcode "$BARCODE" --keep-raw >"$T/k1.log" 2>&1
+check "raw FLACs kept with --keep-raw"     bash -c "ls '$OUT'/RIP/*/raw/01.flac"
+check "reports also stored in extras/rip/" test -f "$FLACDIR/extras/rip/rip.log"
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+cdr run --format aac --barcode "$BARCODE" --discard-master >"$T/k2.log" 2>&1
+check "FLAC folder discarded"              test ! -d "$OUT/FLAC/Gerry Mulligan - Night Lights"
+check "reports kept in the AAC folder"     test -f "$AACDIR/extras/rip/rip.log" -a -f "$AACDIR/extras/rip/rip.cue"
+check "no raw audio left"                  bash -c "! ls '$OUT'/RIP/*/raw/*.flac"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then echo "All checks passed."; else echo "$FAIL check(s) FAILED. Logs kept in $T"; trap - EXIT; exit 1; fi

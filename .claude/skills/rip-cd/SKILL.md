@@ -55,8 +55,12 @@ Rules:
 - **Never invent a barcode, release ID or year.** Use exactly what the user gave.
 - A catalog number, label or country can't be passed to the script; ask for the
   barcode instead.
-- `--discard-master` deletes the FLAC deliverable (the `RIP/` folder with the
-  log and cue is never deleted). Use it only on an explicit request, with aac.
+- `--discard-master` deletes the FLAC deliverable, and with it **all lossless
+  audio** (the raw rip is already removed after a verified encode). The rip log
+  and cue move to the AAC folder's `extras/rip/`. Use it only on an explicit
+  request, with aac, and say that the lossless copy will be gone.
+- After a verified encode the raw rip audio is removed (`--keep-raw` keeps it);
+  the FLAC folder holds the lossless master and `extras/rip/` the log and cue.
 - `--pick earliest` and `--allow-unverified` are the user's decisions: never add
   them on your own.
 

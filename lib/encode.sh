@@ -37,28 +37,65 @@ clean_previous_outputs() { # format (flac|aac)
     return 0
 }
 
-# Copy the rip evidence into <album folder>/extras/ so it travels with the music
-# when the folder is moved into a library. Only for disc rips. The originals stay
-# in RIP/<id>/. For FLAC the cue sheet's FILE names are rewritten to the final
-# track names (one level up, "../"); for AAC the cue is copied unchanged because
-# it describes the lossless rip, not the .m4a files.
-write_extras() { # album dir, ext (flac|m4a)
-    local dir="$1" ext="$2" ex="$1/extras" i raw new cue
-    [[ "$SRC_KIND" == "flac" && -d "$SESSION_DIR/raw" ]] || return 0
-    mkdir -p "$ex"
-    [[ -f "$SESSION_DIR/raw/rip.log" ]] && cp "$SESSION_DIR/raw/rip.log" "$ex/rip.log"
-    [[ -f "$SESSION_DIR/cyanrip-output.txt" ]] && cp "$SESSION_DIR/cyanrip-output.txt" "$ex/cyanrip-output.txt"
-    if [[ -f "$SESSION_DIR/raw/rip.cue" ]]; then
-        cue="$(<"$SESSION_DIR/raw/rip.cue")"
-        if [[ "$ext" == "flac" ]]; then
-            for i in "${!TRACK_SRC[@]}"; do
-                raw="$(basename "${TRACK_SRC[$i]}")"
-                new="$(track_basename "$i").flac"
-                cue="${cue//\"$raw\"/\"../$new\"}"
-            done
+# Rewrite the FILE lines of a cue sheet by position: the i-th FILE line becomes
+# "../../<i-th name>", the track beside extras/rip/. Works on the first encode and
+# on every later rename, because it never depends on the old names.
+rewrite_cue_files() { # cue file, final track file names...
+    local cue="$1" line out="" i=0; shift
+    local names=("$@")
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ $i -lt ${#names[@]} && "$line" =~ ^([[:space:]]*FILE[[:space:]]+)\"[^\"]*\"(.*)$ ]]; then
+            line="${BASH_REMATCH[1]}\"../../${names[$i]}\"${BASH_REMATCH[2]}"
+            i=$((i + 1))
         fi
-        printf '%s\n' "$cue" > "$ex/rip.cue"
+        out+="$line"$'\n'
+    done < "$cue"
+    printf '%s' "$out" > "$cue"
+}
+
+cover_ext() { # cover file -> png | jpg
+    case "${1,,}" in *.png) printf png ;; *) printf jpg ;; esac
+}
+
+# Store the rip evidence ONCE, inside an album folder, so it travels with the
+# music: extras/rip/ (log, cue, cyanrip output, disc info) and extras/release/
+# (cover). The session originals are removed by remove_raw, only once the
+# FLAC master is verified, so a failed run never loses them. For a FLAC
+# folder the cue's FILE names are pointed at the tracks; for the AAC folder
+# (only when the FLAC is discarded) the cue is kept as it is.
+write_extras() { # album dir, flac|m4a
+    local dir="$1" ext="$2" ex="$1/extras" f names=() i
+    [[ "$SRC_KIND" == "flac" && $RAW_GONE -eq 0 ]] || return 0
+    mkdir -p "$ex/rip"
+    for f in "$SESSION_DIR/raw/rip.log" "$SESSION_DIR/raw/rip.cue" \
+             "$SESSION_DIR/cyanrip-output.txt" "$SESSION_DIR/disc-info.txt"; do
+        [[ -f "$f" ]] && cp "$f" "$ex/rip/$(basename "$f")"
+    done
+    if [[ "$ext" == "flac" && -f "$ex/rip/rip.cue" ]]; then
+        for i in "${!TRACK_SRC[@]}"; do names+=("$(track_basename "$i").flac"); done
+        rewrite_cue_files "$ex/rip/rip.cue" "${names[@]}"
     fi
+    if [[ -n "$COVER" && -f "$COVER" ]]; then
+        mkdir -p "$ex/release"
+        cp "$COVER" "$ex/release/cover.$(cover_ext "$COVER")"
+    fi
+}
+
+# Delete the raw FLACs once every track has a verified FLAC in the master
+# folder, together with the originals of the reports copied by write_extras.
+# --keep-raw skips it.
+remove_raw() {
+    local n_out
+    [[ "$SRC_KIND" == "flac" && $RAW_GONE -eq 0 && $KEEP_RAW -eq 0 ]] || return 0
+    n_out="$(find "$OUT_DIR/$MASTER_REL" -maxdepth 1 -type f -name '*.flac' | wc -l)"
+    if [[ "$((n_out))" -ne "${#TRACK_SRC[@]}" ]]; then
+        echo "Keeping the raw rip: expected ${#TRACK_SRC[@]} FLAC files in $MASTER_REL, found $((n_out))."
+        return 0
+    fi
+    rm -f "${TRACK_SRC[@]}" "$SESSION_DIR/raw/rip.log" "$SESSION_DIR/raw/rip.cue" \
+        "$SESSION_DIR/cyanrip-output.txt" "$SESSION_DIR/disc-info.txt"
+    rmdir "$SESSION_DIR/raw" 2>/dev/null || true
+    echo "Removed the raw FLAC copy (the verified FLAC in $MASTER_REL replaces it)."
 }
 
 encode_flac_master() {
@@ -80,7 +117,6 @@ encode_flac_master() {
         write_flac_tags "$dst" "$i" "$total"
         MASTER_FILES+=("$dst")
     done
-    write_extras "$dir" flac
     MASTER_REL="$rel"
     rip_json_add_output flac "$rel"
 }
@@ -102,7 +138,6 @@ encode_aac_from_master() {
         flac -d -c -s "${MASTER_FILES[$i]}" | fdkaac "${FDK_ARGS[@]}" -o "$dst" -
         write_m4a_tags "$dst" "$i" "$total"
     done
-    write_extras "$dir" m4a
     AAC_REL="$rel"
     rip_json_add_output aac "$rel"
 }
@@ -146,9 +181,25 @@ cmd_encode() {
     fi
 
     MASTER_FILES=(); MASTER_REL=""; AAC_REL=""
-    encode_flac_master
-    if [[ "$FORMAT" == "aac" ]]; then
+    if [[ $RAW_GONE -eq 1 ]]; then
+        # The raw rip was removed earlier: the FLAC master already exists and is
+        # the only lossless copy. Never re-encode (or delete) it here.
+        [[ "$FORMAT" == "aac" ]] || die "The FLAC master already exists in $SRC_DIR. To change its tags or names use: update"
+        [[ $DISCARD_MASTER -eq 0 ]] || die "--discard-master must be given in the run that encodes the AAC, while the rip evidence can still move to the AAC folder."
+        MASTER_FILES=("${TRACK_SRC[@]}")
+        MASTER_REL="${SRC_DIR#"$OUT_DIR"/}"
+        echo ""
+        echo "Using the existing FLAC master: $SRC_DIR"
         encode_aac_from_master
+    else
+        encode_flac_master
+        [[ "$FORMAT" == "aac" ]] && encode_aac_from_master
+        if [[ $DISCARD_MASTER -eq 1 ]]; then
+            write_extras "$OUT_DIR/$AAC_REL" m4a
+        else
+            write_extras "$OUT_DIR/$MASTER_REL" flac
+        fi
+        remove_raw
         [[ $DISCARD_MASTER -eq 1 ]] && discard_master
     fi
 
@@ -162,6 +213,6 @@ cmd_encode() {
     else
         echo "FLAC: $OUT_DIR/$MASTER_REL"
     fi
-    echo "Rip folder: $SESSION_DIR"
+    echo "Rip state: $SESSION_DIR  (rip.json / release.json only; the audio and reports are in the album folder)"
     return 0
 }
