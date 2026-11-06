@@ -18,6 +18,7 @@ ARG_DISC=""                       # disc number
 ARG_TOTAL_DISCS=""
 ARG_BARCODE=""
 ARG_MBID=""                       # MusicBrainz release ID
+ARG_DGID=""                       # Discogs release ID (number)
 ARG_DISCID=""                     # MusicBrainz disc ID
 ARG_PICK=""                       # "earliest" to break ties between editions
 
@@ -217,6 +218,7 @@ parse_flags() {
             --year)             ARG_YEAR="${2:-}"; shift 2 ;;
             --barcode)          ARG_BARCODE="${2:-}"; shift 2 ;;
             --mb-release)       ARG_MBID="${2:-}"; shift 2 ;;
+            --discogs-release)  ARG_DGID="${2:-}"; shift 2 ;;
             --discid)           ARG_DISCID="${2:-}"; shift 2 ;;
             --pick)             ARG_PICK="${2:-}"; shift 2 ;;
             --lookup)           LOOKUP=1; shift ;;
@@ -250,6 +252,10 @@ parse_flags() {
     fi
     if [[ -n "$ARG_MBID" && ! "$ARG_MBID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
         die "--mb-release must be a MusicBrainz release ID (UUID)"
+    fi
+    if [[ -n "$ARG_DGID" ]]; then
+        ARG_DGID="${ARG_DGID#discogs:}"
+        [[ "$ARG_DGID" =~ ^[0-9]+$ ]] || die "--discogs-release must be a Discogs release number (e.g. 23069102)"
     fi
     if [[ -n "$disc_arg" ]]; then
         [[ "$disc_arg" =~ ^([0-9]+)(/([0-9]+))?$ ]] || die "--disc must look like 2 or 2/3 (got '$disc_arg')"

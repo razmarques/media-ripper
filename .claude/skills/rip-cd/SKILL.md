@@ -44,7 +44,7 @@ From the user's message; ask (AskUserQuestion) only for what is missing and need
 | **What to work on** | Disc in the drive, a WAV folder, a `RIP/<id>` folder, or a folder of existing `.flac`/`.m4a`. |
 | **Format** | `flac` or `aac` for `run`/`encode`. If not stated, ask. `aac` also keeps the FLAC master. |
 | **Barcode** | Best identifier (back of the case; spaces/dashes fine). |
-| `--mb-release <id>` | Only if the user gives one, or to resolve an ambiguity they chose. |
+| `--mb-release <id>` / `--discogs-release <n>` | Only if the user gives one, or to resolve an ambiguity they chose. Discogs is tried automatically for a barcode MusicBrainz can't place. |
 | Artist, album | Only if there is no barcode and the folder isn't named `Artist - Album [WAV]`. |
 | Year, disc | Only if the user gives them. Disc looks like `2/3`. Never guess either. |
 | Output folder | Default `./outputs` in the repo root. |
@@ -90,6 +90,9 @@ docker run --rm [--network none] [--device=/dev/sr0] \
   library folder is under `/music/...` (mount the **parent** of a folder you want
   renamed — a mount point itself cannot be renamed).
 - `mkdir -p` the output folder first so Docker doesn't create it as root.
+- **Discogs token:** if `DISCOGS_TOKEN` is set in the user's environment, add
+  `-e DISCOGS_TOKEN` to `docker run` (never put the value on the command line).
+  It is optional.
 - **Network:** `--network none` only when nothing needs MusicBrainz (WAV-folder
   `run`/`encode` with no `--barcode`/`--mb-release`/`--lookup`). `match`,
   `update` with identifiers, and every disc command need the network.
@@ -109,7 +112,8 @@ docker run --rm [--network none] [--device=/dev/sr0] \
   renames), and only after they agree run it again with `--apply`.
 - **Ambiguous match** (script exits 3 and lists editions): show the candidates
   (date, country, label, barcode) and let the user choose; rerun with
-  `--mb-release <id>`. Offer `--pick earliest` as the alternative.
+  `--mb-release <id>` (or `--discogs-release <n>` for `discogs:` candidates). Offer
+  `--pick earliest` as the alternative.
 - **Multi-disc:** if the script asks for the disc number, ask the user and pass
   `--disc N/TOTAL`.
 - **Verification failure** (`AccurateRip did not verify`): report it as is; the

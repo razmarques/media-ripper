@@ -48,7 +48,8 @@ Key ideas:
   `raw/`, `rip.json`) and does **no metadata lookup** (`cyanrip -N`), so a
   metadata failure can never cost a rip. **Never re-rip a disc to fix tags.**
 - Metadata is a separate step: `match` finds the MusicBrainz release (order:
-  `--mb-release`, `--barcode`, saved disc ID, `--lookup` artist+album search),
+  `--mb-release`/`--discogs-release`, `--barcode`, saved disc ID, then Discogs by
+  barcode when MusicBrainz has nothing usable, `--lookup` artist+album search),
   validates it against the real track count and durations, and previews;
   `--save` writes `release.json`. `update` writes tags/cover/names into existing
   FLAC/M4A files in place (no re-encode), preview unless `--apply`, and works on
@@ -67,7 +68,7 @@ Key ideas:
   not in the folder name). No match: `Unknown Artist - Unknown Album/Track NN`.
   Multi-disc needs `--disc N/TOTAL` unless one disc fits the durations.
 - Ambiguous matches stop and list candidates; the user picks with `--mb-release`
-  or `--pick earliest`. Never guess a barcode, release ID or year.
+  (`--discogs-release` for Discogs) or `--pick earliest`. Never guess a barcode, release ID or year.
 - **Drive offset is never assumed 0.** Order: `--offset`/`$CD_OFFSET` → saved
   per-drive value (`<out>/.cd-ripper/drive-offsets.tsv`) → AccurateRip drive
   database → `cyanrip -f` measured → stop with instructions. After the rip, if

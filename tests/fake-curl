@@ -2,13 +2,13 @@
 # Stand-in for curl, used by tests/run.sh so the suite is offline and
 # deterministic. Serves the recorded MusicBrainz responses in tests/fixtures/
 # (mounted at $FIXTURES) and a generated cover image. Anything else fails like
-# `curl -f` does on an HTTP error (exit 22).
+# `curl -f` does on an HTTP error (exit 22). Discogs endpoints are served too.
 fx="${FIXTURES:-/fixtures}"
 url=""; out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
-    -A|--max-time|--data-urlencode) shift 2 ;;
+    -A|--max-time|--data-urlencode|-H) shift 2 ;;
     http*) url="$1"; shift ;;
     *) shift ;;
   esac
@@ -18,7 +18,16 @@ case "$url" in
     f="$fx/release-${url##*/release/}.json"
     [[ -f "$f" ]] && { cat "$f"; exit 0; } ;;
   https://musicbrainz.org/ws/2/release)
-    cat "$fx/search-barcode.json"; exit 0 ;;
+    # FAKE_MB_EMPTY=1: MusicBrainz knows nothing, so the Discogs fallback runs.
+    if [[ -n "${FAKE_MB_EMPTY:-}" ]]; then echo '{"releases":[]}'; else cat "$fx/search-barcode.json"; fi
+    exit 0 ;;
+  https://api.discogs.com/database/search)
+    cat "$fx/discogs-search-barcode.json"; exit 0 ;;
+  https://api.discogs.com/releases/*)
+    f="$fx/discogs-release-${url##*/releases/}.json"
+    [[ -f "$f" ]] && { cat "$f"; exit 0; } ;;
+  https://i.discogs.com/*)
+    [[ -n "$out" ]] && ffmpeg -v error -y -f lavfi -i color=c=0x993366:s=64x64 -frames:v 1 -f mjpeg "$out" && exit 0 ;;
   https://coverartarchive.org/release/*/front-1200)
     [[ -n "$out" ]] && ffmpeg -v error -y -f lavfi -i color=c=0x336699:s=64x64 -frames:v 1 -f mjpeg "$out" && exit 0 ;;
 esac

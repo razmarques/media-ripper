@@ -70,7 +70,10 @@ Options:
 
   Metadata (flags always win over what was found):
       --mb-release <id>      Use exactly this MusicBrainz release
-      --barcode <code>       Release by barcode (UPC/EAN, back of the case)
+      --barcode <code>       Release by barcode (UPC/EAN, back of the case). If
+                             MusicBrainz has no usable release, Discogs is tried
+                             ($DISCOGS_TOKEN optional: higher rate limit, covers)
+      --discogs-release <n>  Use exactly this Discogs release (the number)
       --discid <id>          Release by MusicBrainz disc ID (set for you on rips)
       --lookup               Also search by artist + album (otherwise offline
                              for WAV folders; match/update always may)

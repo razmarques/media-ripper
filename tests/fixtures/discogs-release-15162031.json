@@ -1,0 +1,294 @@
+{
+ "id": 15162031,
+ "year": 1985,
+ "resource_url": "https://api.discogs.com/releases/15162031",
+ "artists": [
+  {
+   "name": "Gerry Mulligan",
+   "anv": "",
+   "join": "",
+   "role": "",
+   "tracks": "",
+   "id": 37733,
+   "resource_url": "https://api.discogs.com/artists/37733",
+   "thumbnail_url": "https://i.discogs.com/P8rPBejWy-XX37QoR6C9t_lmcnxC3LLxAiLvBx1DKkI/rs:fit/g:sm/q:90/h:516/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTM3NzMz/LTE2NDc4MTAzNTkt/NTAxOC5qcGVn.jpeg"
+  }
+ ],
+ "artists_sort": "Gerry Mulligan",
+ "labels": [
+  {
+   "name": "Mercury",
+   "catno": "818 271-2",
+   "entity_type": "1",
+   "entity_type_name": "Label",
+   "id": 39357,
+   "resource_url": "https://api.discogs.com/labels/39357",
+   "thumbnail_url": "https://i.discogs.com/Gk10JQfI8xTIB79ehV94mylhBMI0-KediNkDlP0wk3M/rs:fit/g:sm/q:90/h:269/w:585/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTM5MzU3/LTE3ODE4ODgzMDIt/MTAyMS5qcGVn.jpeg"
+  }
+ ],
+ "master_id": 271057,
+ "title": "Night Lights",
+ "country": "Germany",
+ "released": "1985",
+ "released_formatted": "1985",
+ "identifiers": [
+  {
+   "type": "Barcode",
+   "value": "0 42281 82712 9",
+   "description": "Text"
+  },
+  {
+   "type": "Matrix / Runout",
+   "value": "818 271-2 01 "
+  },
+  {
+   "type": "Rights Society",
+   "value": "GEMA"
+  },
+  {
+   "type": "Other",
+   "value": "\u2143 V",
+   "description": "Stamped in run-out - variant 1"
+  },
+  {
+   "type": "Other",
+   "value": "AD F",
+   "description": "Stamped in run-out - variant 2"
+  }
+ ],
+ "tracklist": [
+  {
+   "position": "1",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan And His Sextet",
+     "anv": "Gerry Mulligan Sextet",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1013303,
+     "resource_url": "https://api.discogs.com/artists/1013303"
+    }
+   ],
+   "title": "Night Lights (1963 Version)",
+   "duration": "4:53"
+  },
+  {
+   "position": "2",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan And His Sextet",
+     "anv": "Gerry Mulligan Sextet",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1013303,
+     "resource_url": "https://api.discogs.com/artists/1013303"
+    }
+   ],
+   "title": "Morning Of The Carnival From \"Black Orpheus\"",
+   "duration": "5:27"
+  },
+  {
+   "position": "3",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan And His Sextet",
+     "anv": "Gerry Mulligan Sextet",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1013303,
+     "resource_url": "https://api.discogs.com/artists/1013303"
+    }
+   ],
+   "title": "In The Wee Small Hours Of The Morning",
+   "duration": "5:34"
+  },
+  {
+   "position": "4",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan And His Sextet",
+     "anv": "Gerry Mulligan Sextet",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1013303,
+     "resource_url": "https://api.discogs.com/artists/1013303"
+    }
+   ],
+   "title": "Prelude In E Minor",
+   "duration": "4:11"
+  },
+  {
+   "position": "5",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan And His Sextet",
+     "anv": "Gerry Mulligan Sextet",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1013303,
+     "resource_url": "https://api.discogs.com/artists/1013303"
+    }
+   ],
+   "title": "Festival Minor",
+   "duration": "6:45"
+  },
+  {
+   "position": "6",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan And His Sextet",
+     "anv": "Gerry Mulligan Sextet",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1013303,
+     "resource_url": "https://api.discogs.com/artists/1013303"
+    }
+   ],
+   "title": "Tell Me When",
+   "duration": "4:06"
+  },
+  {
+   "position": "7",
+   "type_": "track",
+   "artists": [
+    {
+     "name": "Gerry Mulligan Quintet",
+     "anv": "",
+     "join": "",
+     "role": "",
+     "tracks": "",
+     "id": 1014449,
+     "resource_url": "https://api.discogs.com/artists/1014449"
+    }
+   ],
+   "title": "Night Lights (1965 Version)",
+   "extraartists": [
+    {
+     "name": "Jimmy Bond",
+     "anv": "",
+     "join": "",
+     "role": "Bass",
+     "tracks": "",
+     "id": 281326,
+     "resource_url": "https://api.discogs.com/artists/281326"
+    },
+    {
+     "name": "Gerry Mulligan",
+     "anv": "",
+     "join": "",
+     "role": "Clarinet",
+     "tracks": "",
+     "id": 37733,
+     "resource_url": "https://api.discogs.com/artists/37733"
+    },
+    {
+     "name": "Harry Bluestone",
+     "anv": "",
+     "join": "",
+     "role": "Concertmaster",
+     "tracks": "",
+     "id": 336325,
+     "resource_url": "https://api.discogs.com/artists/336325"
+    },
+    {
+     "name": "Hal Blaine",
+     "anv": "",
+     "join": "",
+     "role": "Drums",
+     "tracks": "",
+     "id": 229494,
+     "resource_url": "https://api.discogs.com/artists/229494"
+    },
+    {
+     "name": "John Gray (2)",
+     "anv": "Jond Gray",
+     "join": "",
+     "role": "Guitar",
+     "tracks": "",
+     "id": 354414,
+     "resource_url": "https://api.discogs.com/artists/354414"
+    },
+    {
+     "name": "Pete Jolly",
+     "anv": "",
+     "join": "",
+     "role": "Piano",
+     "tracks": "",
+     "id": 168453,
+     "resource_url": "https://api.discogs.com/artists/168453"
+    }
+   ],
+   "duration": "2:53"
+  }
+ ],
+ "images": [
+  {
+   "type": "primary",
+   "uri": "https://i.discogs.com/q_1Z-fuQ_X1WdtlNO4-Eqteo9Ax1oYhxtse8BqQ0iKU/rs:fit/g:sm/q:90/h:595/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY2/NTctNjA3NS5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/q_1Z-fuQ_X1WdtlNO4-Eqteo9Ax1oYhxtse8BqQ0iKU/rs:fit/g:sm/q:90/h:595/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY2/NTctNjA3NS5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/W_CASyYAjDMhK-Gy0fZamHH-phZpfc1TPSpLdnTRK3w/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY2/NTctNjA3NS5qcGVn.jpeg",
+   "width": 600,
+   "height": 595
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/gbfkj9fa6TXssAVttQhSesVMRCGWuxXxfvIXERPv5mk/rs:fit/g:sm/q:90/h:464/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNjY2/MDItNTA0MC5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/gbfkj9fa6TXssAVttQhSesVMRCGWuxXxfvIXERPv5mk/rs:fit/g:sm/q:90/h:464/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNjY2/MDItNTA0MC5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/HBGB3LVShJ9lhvuV2GegJwGc_0bFCnWbwguBGxirzN4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNjY2/MDItNTA0MC5qcGVn.jpeg",
+   "width": 600,
+   "height": 464
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/64aa9ZWUoXcPJMRBwWAfGNyA5lqDUftIZUoV0T52FhE/rs:fit/g:sm/q:90/h:600/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY3/MzgtNzg1NC5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/64aa9ZWUoXcPJMRBwWAfGNyA5lqDUftIZUoV0T52FhE/rs:fit/g:sm/q:90/h:600/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY3/MzgtNzg1NC5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/ghtix8Crh8toQg-VqPE_SFQKPMBOq18AL13p_vbM-Wo/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY3/MzgtNzg1NC5qcGVn.jpeg",
+   "width": 599,
+   "height": 600
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/P2roxItoeWZNy_YPOTfPY7M5-KBht2TnJR16m0DpYAA/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY0/NzctNjMwMS5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/P2roxItoeWZNy_YPOTfPY7M5-KBht2TnJR16m0DpYAA/rs:fit/g:sm/q:90/h:597/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY0/NzctNjMwMS5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/NTRduPtG7_FmCbDPkSO2VEZCnNLYddyCb7Pzx_KxOuU/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTY0/NzctNjMwMS5qcGVn.jpeg",
+   "width": 600,
+   "height": 597
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/Fzi-hgrSc2DjsESiDotc5-v-Dr2BnIC_T7z8_fLu0Co/rs:fit/g:sm/q:90/h:594/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/MzUtMTg1NS5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/Fzi-hgrSc2DjsESiDotc5-v-Dr2BnIC_T7z8_fLu0Co/rs:fit/g:sm/q:90/h:594/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/MzUtMTg1NS5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/aVWeWqWUUjb7ECxqJIxc1aIz_5XM6QK3fAenz9rk-ZI/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/MzUtMTg1NS5qcGVn.jpeg",
+   "width": 600,
+   "height": 594
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/GVMYC4ANa1IiuLi22k9nb5ZyGxP8jkgT91b-65lMnuk/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/MzctMjY2OS5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/GVMYC4ANa1IiuLi22k9nb5ZyGxP8jkgT91b-65lMnuk/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/MzctMjY2OS5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/AstYivyH8PEm7hFp6qkB4UnZHpsHGvC48_K4eSN01N0/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/MzctMjY2OS5qcGVn.jpeg",
+   "width": 600,
+   "height": 593
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/hg2PecCV71D1UXhzucH_A5FXHC5EpQIHhTfvaeUkT8I/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/NTQtNTkyNy5qcGVn.jpeg",
+   "resource_url": "https://i.discogs.com/hg2PecCV71D1UXhzucH_A5FXHC5EpQIHhTfvaeUkT8I/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/NTQtNTkyNy5qcGVn.jpeg",
+   "uri150": "https://i.discogs.com/n1bqhbitWL5MEDbVhm4W2ECa9qxnQUDV9sWOYycoJlg/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE1MTYy/MDMxLTE2NDcyNTYy/NTQtNTkyNy5qcGVn.jpeg",
+   "width": 597,
+   "height": 600
+  }
+ ]
+}

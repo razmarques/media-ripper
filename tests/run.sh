@@ -29,6 +29,7 @@ check() { # description, command...
 }
 
 # MusicBrainz / Cover Art Archive stand-in, mounted over curl.
+EXTRA=()   # extra docker args for the next cdr calls
 FAKE_NET=(-e FIXTURES=/fixtures -v "$PWD/tests/fake-curl":/usr/local/bin/curl:ro -v "$PWD/tests/fixtures":/fixtures:ro)
 
 # Synthesise 7 mono 8 kHz tones with the track lengths of the Night Lights
@@ -45,7 +46,7 @@ docker run --rm --entrypoint bash -v "$PWD/tests/fixtures":/fx:ro -v "$IN":/in "
 
 # cdr <args>: run the image with the fake cyanrip, our inputs and output.
 cdr() {
-    docker run --rm "${FAKE_NET[@]}" -e FAKE_SRC=/in/album -e CD_DRIVE_ID="TEST - DRIVE" -e CD_OFFSET=6 \
+    docker run --rm "${FAKE_NET[@]}" ${EXTRA[@]+"${EXTRA[@]}"} -e FAKE_SRC=/in/album -e CD_DRIVE_ID="TEST - DRIVE" -e CD_OFFSET=6 \
         -e FAKE_LOG=/music/fake-calls.log \
         -v "$PWD/tests/fake-cyanrip":/usr/local/bin/cyanrip:ro \
         -v "$IN":/in:ro -v "$OUT":/music "$IMAGE" "$@"
@@ -76,6 +77,22 @@ check "release with other durations is rejected" grep -q 'duration' "$T/m2.log"
 cdr match "$RIP" --barcode "$BARCODE" --save >"$T/m3.log" 2>&1
 check "--save writes release.json"         test -f "$RIPDIR/release.json"
 check "release.json has 7 tracks"          bash -c "[ \$(grep -o '\"title\"' '$RIPDIR/release.json' | wc -l) -eq 7 ]"
+
+echo "== 2b. barcode unknown to MusicBrainz: Discogs fallback"
+check "MusicBrainz hit never touches Discogs"     bash -c "! grep -q Discogs '$T/m1.log'"
+EXTRA=(-e FAKE_MB_EMPTY=1)
+cdr match "$RIP" --barcode "$BARCODE" --save >"$T/dg1.log" 2>&1
+check "Discogs is tried after MusicBrainz"        grep -q 'trying Discogs' "$T/dg1.log"
+check "editions that differ stop and ask"        grep -q 'discogs-release' "$T/dg1.log"
+cdr match "$RIP" --barcode "$BARCODE" --discogs-release 23069102 --save >"$T/dg2.log" 2>&1
+check "chosen Discogs release matched"            grep -q 'Matched: Gerry Mulligan - Night Lights (1985' "$T/dg2.log"
+check "release id is a discogs id"                grep -q 'Release ID: discogs:23069102' "$T/dg2.log"
+cdr match "$RIP" --barcode "$BARCODE" --pick earliest >"$T/dg3.log" 2>&1
+check "--pick earliest takes the earliest dated"  grep -q 'Matched: Gerry Mulligan - Night Lights (1985' "$T/dg3.log"
+check "release.json says source discogs, 7 tracks" bash -c "grep -q '\"source\":\"discogs\"' '$RIPDIR/release.json' && [ \$(grep -o '\"title\"' '$RIPDIR/release.json' | wc -l) -eq 7 ]"
+check "Discogs cover art saved"                   test -s "$RIPDIR/cover.img"
+EXTRA=()
+cdr match "$RIP" --barcode "$BARCODE" --save >"$T/m3b.log" 2>&1   # put the MusicBrainz release back
 
 echo "== 3. encode from the rip, using release.json"
 cdr encode "$RIP" --format aac >"$T/e1.log" 2>&1

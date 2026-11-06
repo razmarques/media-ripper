@@ -134,7 +134,13 @@ save_release() { # write release.json (+ cover) into the session
     [[ -n "$SESSION_DIR" ]] || return 0
     ensure_session
     cp "$WORK_DIR/chosen.json" "$SESSION_DIR/release.json"
-    if mb_fetch_cover "$(jq -r .mb_release "$WORK_DIR/chosen.json")" "$SESSION_DIR/cover.img"; then
+    local got=1
+    if [[ "$(jq -r '.source // "musicbrainz"' "$WORK_DIR/chosen.json")" == "discogs" ]]; then
+        dg_fetch_cover "$(jq -r '.cover_url // ""' "$WORK_DIR/chosen.json")" "$SESSION_DIR/cover.img" && got=0
+    else
+        mb_fetch_cover "$(jq -r .mb_release "$WORK_DIR/chosen.json")" "$SESSION_DIR/cover.img" && got=0
+    fi
+    if [[ $got -eq 0 ]]; then
         COVER="$SESSION_DIR/cover.img"
         echo "Cover art saved."
     else
@@ -175,7 +181,7 @@ cmd_update() {
     load_all
 
     local want_match=0 rc=0 dirs=() d rel chosen=0
-    if [[ -n "$ARG_MBID" || -n "$ARG_BARCODE" || -n "$ARG_DISCID" || $LOOKUP -eq 1 ]]; then
+    if [[ -n "$ARG_MBID" || -n "$ARG_DGID" || -n "$ARG_BARCODE" || -n "$ARG_DISCID" || $LOOKUP -eq 1 ]]; then
         want_match=1
     elif [[ -n "$SESSION_DIR" && -f "$(session_json)" && ! -f "$SESSION_DIR/release.json" \
             && -n "$(jq -r '.discid // ""' "$(session_json)")" ]]; then

@@ -10,7 +10,7 @@ cmd_run() {
         cmd_rip
         TARGET="$SESSION_DIR"
         attempt=1
-    elif [[ -n "$ARG_MBID" || -n "$ARG_BARCODE" || -n "$ARG_DISCID" || $LOOKUP -eq 1 ]]; then
+    elif [[ -n "$ARG_MBID" || -n "$ARG_DGID" || -n "$ARG_BARCODE" || -n "$ARG_DISCID" || $LOOKUP -eq 1 ]]; then
         attempt=1
     fi
 

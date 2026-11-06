@@ -88,16 +88,21 @@ folder is embedded.
 
 ### How matching works
 
-Order: `--mb-release` → `--barcode` (exact) → the disc ID saved by `rip` →
-artist + album search (`--lookup`; `match` and `update` allow it by default when
+Order: `--mb-release` / `--discogs-release` → `--barcode` (exact; leading zeros
+don't matter) → the disc ID saved by `rip` → **Discogs by barcode** (only if
+MusicBrainz had nothing usable) → artist + album search (`--lookup`; `match` and `update` allow it by default when
 nothing better is given). Every candidate is **checked against your files**:
-same track count and every track length within 2 s, so a different edition or
+same track count and every track length within 2 s (5 s for Discogs, whose
+times are user-entered), so a different edition or
 album is rejected. If several editions fit and they are the same record (titles
 differ only in case or punctuation), the earliest dated one is taken and the
 others are listed. If they are genuinely different, it stops and lists them;
-choose with `--mb-release <id>` or `--pick earliest`. A multi-disc release
+choose with `--mb-release <id>` (`--discogs-release <number>` for Discogs) or
+`--pick earliest`. A multi-disc release
 needs `--disc 2/3` unless exactly one disc fits. Cover art comes from the Cover
-Art Archive. The barcode is on the back of the case.
+Art Archive (or from Discogs for a Discogs match). Discogs works without an
+account; set `DISCOGS_TOKEN` (docker `-e DISCOGS_TOKEN`) for a higher rate
+limit and reliable cover downloads. The barcode is on the back of the case.
 
 ### Accurate ripping (offset + AccurateRip)
 
@@ -133,6 +138,7 @@ continues.
 | `-d, --device <path>` | Optical drive (default `/dev/sr0`) |
 | `--mb-release <id>` | Use exactly this MusicBrainz release |
 | `--barcode <code>` | Release by barcode (UPC/EAN) |
+| `--discogs-release <n>` | Use exactly this Discogs release (the number) |
 | `--discid <id>` | Release by MusicBrainz disc ID (recorded by `rip`) |
 | `--lookup` | Also search by artist + album |
 | `--pick earliest` | If several different releases fit, take the earliest |

@@ -1,0 +1,181 @@
+{
+ "pagination": {
+  "page": 1,
+  "pages": 1,
+  "per_page": 50,
+  "items": 3,
+  "urls": {}
+ },
+ "results": [
+  {
+   "country": "Japan",
+   "year": "1985",
+   "format": [
+    "CD",
+    "Album",
+    "Reissue",
+    "Stereo"
+   ],
+   "label": [
+    "Mercury",
+    "Nippon Phonogram Co., Ltd.",
+    "Phonogram International B.V.",
+    "Polygram, Hanover, West Germany",
+    "Nola Recording Studios"
+   ],
+   "type": "release",
+   "genre": [
+    "Jazz"
+   ],
+   "style": [
+    "Modal",
+    "Cool Jazz"
+   ],
+   "id": 23069102,
+   "barcode": [
+    "0 42281 82712 9",
+    "GEMA"
+   ],
+   "master_id": 271057,
+   "master_url": "https://api.discogs.com/masters/271057",
+   "uri": "/release/23069102-Gerry-Mulligan-Night-Lights",
+   "catno": "32JD-17 (818 271-2)",
+   "title": "Gerry Mulligan - Night Lights",
+   "thumb": "",
+   "cover_image": "",
+   "resource_url": "https://api.discogs.com/releases/23069102",
+   "community": {
+    "want": 68,
+    "have": 4
+   },
+   "format_quantity": 1,
+   "formats": [
+    {
+     "name": "CD",
+     "qty": "1",
+     "descriptions": [
+      "Album",
+      "Reissue",
+      "Stereo"
+     ]
+    }
+   ]
+  },
+  {
+   "country": "Germany",
+   "year": "1985",
+   "format": [
+    "CD",
+    "Album",
+    "Reissue",
+    "Stereo"
+   ],
+   "label": [
+    "Mercury",
+    "Phonogram",
+    "Phonogram International B.V.",
+    "Polygram, Hanover, West Germany",
+    "Nola Recording Studios"
+   ],
+   "type": "release",
+   "genre": [
+    "Jazz"
+   ],
+   "style": [
+    "Modal",
+    "Cool Jazz"
+   ],
+   "id": 15162031,
+   "barcode": [
+    "0 42281 82712 9",
+    "818 271-2 01 ",
+    "GEMA",
+    "\u2143 V",
+    "AD F"
+   ],
+   "master_id": 271057,
+   "master_url": "https://api.discogs.com/masters/271057",
+   "uri": "/release/15162031-Gerry-Mulligan-Night-Lights",
+   "catno": "818 271-2",
+   "title": "Gerry Mulligan - Night Lights",
+   "thumb": "",
+   "cover_image": "",
+   "resource_url": "https://api.discogs.com/releases/15162031",
+   "community": {
+    "want": 183,
+    "have": 310
+   },
+   "format_quantity": 1,
+   "formats": [
+    {
+     "name": "CD",
+     "qty": "1",
+     "descriptions": [
+      "Album",
+      "Reissue",
+      "Stereo"
+     ]
+    }
+   ]
+  },
+  {
+   "country": "Germany",
+   "genre": [
+    "Jazz"
+   ],
+   "format": [
+    "CD",
+    "Album",
+    "Compilation",
+    "Reissue",
+    "Remastered"
+   ],
+   "style": [
+    "Modal",
+    "Cool Jazz"
+   ],
+   "id": 11819459,
+   "label": [
+    "Mercury",
+    "Phonogram",
+    "Phonogram International B.V.",
+    "PMDC, Germany",
+    "Nola Recording Studios"
+   ],
+   "type": "release",
+   "barcode": [
+    "0 42281 82712 9",
+    "042281827129",
+    "PG 900",
+    "GEMA",
+    "818 271-2 01",
+    "MADE IN GERMANY BY PMDC YE"
+   ],
+   "master_id": 271057,
+   "master_url": "https://api.discogs.com/masters/271057",
+   "uri": "/release/11819459-Gerry-Mulligan-Night-Lights",
+   "catno": "818 271-2",
+   "title": "Gerry Mulligan - Night Lights",
+   "thumb": "",
+   "cover_image": "",
+   "resource_url": "https://api.discogs.com/releases/11819459",
+   "community": {
+    "want": 140,
+    "have": 64
+   },
+   "format_quantity": 1,
+   "formats": [
+    {
+     "name": "CD",
+     "qty": "1",
+     "descriptions": [
+      "Album",
+      "Compilation",
+      "Reissue",
+      "Remastered"
+     ]
+    }
+   ]
+  }
+ ]
+}

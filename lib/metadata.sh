@@ -32,6 +32,7 @@ def off($tr): [$tr | to_entries[]
 | ($good[0] // $cnt[0] // null) as $med
 | {id: .id, date: (.date // ""), country: (.country // ""), barcode: (.barcode // ""),
    artist: credit, album: .title,
+   cover_url: (.cover_url // ""),
    label: ([."label-info"[]? | ((.label.name // "?") + " " + (."catalog-number" // ""))] | join("; ")),
    media: $nm, disc: ($med.position // null), status: $status,
    tracks: ($med.tracks // [] | map({n: .position, title: .title}))}
@@ -56,6 +57,65 @@ mb_get() { # path, then curl args. Retries: MusicBrainz sometimes answers 503.
 
 MB_INC="recordings+artist-credits+labels"
 
+# ----------------------------------------------------------------------------
+# Discogs: fallback when MusicBrainz has no usable release for a barcode.
+# Discogs releases are converted to the MusicBrainz shape so the same
+# validation and tie-break run on them. DISCOGS_TOKEN is optional (a token
+# raises the rate limit and allows cover downloads).
+# ----------------------------------------------------------------------------
+DG_API="https://api.discogs.com"
+DISCOGS_DURATION_TOLERANCE=5      # Discogs track times are user-entered: looser than MusicBrainz
+
+DG_TO_MB_JQ='
+def clean: sub("\\s*\\(\\d+\\)$"; "");
+def ms: if . == null or . == "" then null
+        else (try (split(":") | map(tonumber) | reduce .[] as $x (0; . * 60 + $x) | . * 1000) catch null) end;
+def mk($tl): $tl | to_entries | map({position: (.key + 1), title: .value.title, length: (.value.duration | ms)});
+([.tracklist[]? | select(.type_ == "track")]) as $tl
+| (if ($tl | length) > 0 and ($tl | all(.position | test("^[0-9]+-[0-9]+$")))
+   then ($tl | group_by(.position | split("-")[0] | tonumber)
+         | map({position: (.[0].position | split("-")[0] | tonumber), tracks: mk(.)}))
+   else [{position: 1, tracks: mk($tl)}] end) as $media
+| ((.released // "") | sub("(-00)+$"; "")) as $rel
+| {id: ("discogs:" + (.id | tostring)),
+   title: .title,
+   date: (if $rel != "" then $rel elif (.year // 0) > 0 then (.year | tostring) else "" end),
+   country: (.country // ""),
+   barcode: $b,
+   "artist-credit": [.artists[]? | {name: (.name | clean), joinphrase: (.join // "")}],
+   "label-info": [.labels[]? | {label: {name: .name}, "catalog-number": .catno}],
+   media: $media,
+   cover_url: ([.images[]? | select(.type == "primary") | .uri][0] // .images[0].uri // "")}
+'
+
+DG_FETCH_FAILED=0
+DG_CALLS=0
+
+dg_get() { # path, then curl args
+    local path="$1" attempt out hdr=(); shift
+    [[ -n "${DISCOGS_TOKEN:-}" ]] && hdr=(-H "Authorization: Discogs token=$DISCOGS_TOKEN")
+    DG_CALLS=$((DG_CALLS + 1))
+    [[ $DG_CALLS -gt 1 ]] && sleep 1
+    for attempt in 1 2 3; do
+        if out="$(curl -fsS --max-time 30 -A "$UA" ${hdr[@]+"${hdr[@]}"} -G "$DG_API/$path" "$@" 2>/dev/null)"; then
+            printf '%s' "$out"
+            return 0
+        fi
+        sleep $((attempt * 2))
+    done
+    DG_FETCH_FAILED=$((DG_FETCH_FAILED + 1))
+    return 1
+}
+
+dg_fetch_cover() { # image url, dest
+    local hdr=()
+    [[ -n "${DISCOGS_TOKEN:-}" ]] && hdr=(-H "Authorization: Discogs token=$DISCOGS_TOKEN")
+    [[ -n "$1" ]] || return 1
+    curl -fsSL --max-time 40 -A "$UA" ${hdr[@]+"${hdr[@]}"} -o "$2" "$1" 2>/dev/null \
+        && [[ -s "$2" ]] || { rm -f "$2"; return 1; }
+}
+
+
 # Append full release objects (one JSON per line) to file $1.
 mb_collect() { # out file, method
     local out="$1" method="$2" resp ids id n=0
@@ -67,6 +127,20 @@ mb_collect() { # out file, method
         discid)
             mb_get "discid/$MB_DISCID" --data-urlencode "inc=$MB_INC" \
                 | jq -c '.releases[]?' >> "$out" || true
+            ;;
+        dgid)
+            dg_get "releases/$ARG_DGID" | jq -c --arg b "$ARG_BARCODE" "$DG_TO_MB_JQ" >> "$out" || true
+            ;;
+        discogs)
+            local bn="${ARG_BARCODE#"${ARG_BARCODE%%[!0]*}"}"
+            resp="$(dg_get database/search --data-urlencode "barcode=$ARG_BARCODE" --data-urlencode "type=release")" || return 0
+            ids="$(printf '%s' "$resp" | jq -r --arg bn "$bn" \
+                '.results[]? | select($bn != "" and any(.barcode[]?; gsub("[ -]"; "") | sub("^0+"; "") == $bn)) | .id')"
+            while IFS= read -r id; do
+                [[ -n "$id" ]] || continue
+                n=$((n + 1)); [[ $n -gt 8 ]] && break
+                dg_get "releases/$id" | jq -c --arg b "$ARG_BARCODE" "$DG_TO_MB_JQ" >> "$out" || true
+            done <<< "$ids"
             ;;
         barcode|search)
             local q
@@ -108,9 +182,9 @@ mb_fetch_cover() { # release id, dest
 }
 
 mb_resolve() {
-    local total=${#TRACK_SRC[@]} d method methods=() cands evalf ok durs
+    local total=${#TRACK_SRC[@]} d method methods=() cands evalf ok durs tol
     d="${ARG_DISC:-${FILE_DISC:-0}}"
-    MB_CALLS=0; MB_FETCH_FAILED=0
+    MB_CALLS=0; MB_FETCH_FAILED=0; DG_CALLS=0; DG_FETCH_FAILED=0
 
     need_tools curl jq
     cands="$WORK_DIR/cands.ndjson"; evalf="$WORK_DIR/eval.ndjson"; ok="$WORK_DIR/ok.ndjson"
@@ -123,11 +197,14 @@ mb_resolve() {
     MB_ALBUM="${ARG_ALBUM:-$FILE_ALBUM}"
 
     [[ -n "$ARG_MBID" ]]    && methods+=(mbid)
+    [[ -n "$ARG_DGID" ]]    && methods+=(dgid)
     [[ -n "$ARG_BARCODE" ]] && methods+=(barcode)
     [[ -n "$MB_DISCID" ]]   && methods+=(discid)
+    # Last resort for a barcode MusicBrainz cannot place: Discogs.
+    [[ -n "$ARG_BARCODE" && -z "$ARG_DGID" ]] && methods+=(discogs)
     if [[ $ALLOW_TEXT -eq 1 && -n "$MB_ARTIST" && -n "$MB_ALBUM" ]]; then methods+=(search); fi
     if [[ ${#methods[@]} -eq 0 ]]; then
-        echo "No way to look the release up. Give --mb-release, --barcode, --discid, or artist and album (--lookup)."
+        echo "No way to look the release up. Give --mb-release, --discogs-release, --barcode, --discid, or artist and album (--lookup)."
         return 2
     fi
 
@@ -141,14 +218,18 @@ mb_resolve() {
             mbid)    echo "Looking up release $ARG_MBID ..." ;;
             barcode) echo "Looking up barcode $ARG_BARCODE ..." ;;
             discid)  echo "Looking up disc ID $MB_DISCID ..." ;;
+            dgid)    echo "Looking up Discogs release $ARG_DGID ..." ;;
+            discogs) echo "Not usable on MusicBrainz; trying Discogs for barcode $ARG_BARCODE ..." ;;
             search)  echo "Searching MusicBrainz for: $MB_ARTIST - $MB_ALBUM ..." ;;
         esac
         mb_collect "$cands" "$method"
         [[ $MB_FETCH_FAILED -gt 0 ]] && echo "  warning: $MB_FETCH_FAILED MusicBrainz request(s) failed after retries; the result may be incomplete."
+        [[ $DG_FETCH_FAILED -gt 0 ]] && echo "  warning: $DG_FETCH_FAILED Discogs request(s) failed after retries (rate limit? set DISCOGS_TOKEN); the result may be incomplete."
         [[ -s "$cands" ]] || { echo "  nothing returned."; continue; }
 
+        tol="$DURATION_TOLERANCE"; [[ "$method" == "discogs" || "$method" == "dgid" ]] && tol="$DISCOGS_DURATION_TOLERANCE"
         jq -c --argjson n "$total" --argjson d "$d" --argjson durs "$durs" \
-            --argjson tol "$DURATION_TOLERANCE" "$MB_EVAL_JQ" "$cands" > "$evalf"
+            --argjson tol "$tol" "$MB_EVAL_JQ" "$cands" > "$evalf"
         jq -c 'select(.status == "ok")' "$evalf" > "$ok"
 
         if [[ ! -s "$ok" ]]; then
@@ -157,7 +238,7 @@ mb_resolve() {
                 print_candidates "$evalf"
                 return 2
             fi
-            echo "  none of the ${method} results fit these files (track count $total, durations within ${DURATION_TOLERANCE}s):"
+            echo "  none of the ${method} results fit these files (track count $total, durations within ${tol}s):"
             print_candidates "$evalf"
             continue
         fi
@@ -168,7 +249,11 @@ mb_resolve() {
         if [[ "$groups" -gt 1 && -z "$ARG_PICK" ]]; then
             echo "  Several different releases fit these files:"
             print_candidates "$ok"
-            echo "  Pass --mb-release <id> to choose one, or --pick earliest."
+            if [[ "$method" == "discogs" ]]; then
+                echo "  Pass --discogs-release <number after discogs:> to choose one, or --pick earliest."
+            else
+                echo "  Pass --mb-release <id> to choose one, or --pick earliest."
+            fi
             return 3
         fi
 
@@ -176,6 +261,8 @@ mb_resolve() {
             sort_by(if .date == "" then "9999" else .date end)
             | . as $all | .[0] as $c
             | {version: 1, method: $method, mb_release: $c.id,
+               source: (if $method == "discogs" or $method == "dgid" then "discogs" else "musicbrainz" end),
+               cover_url: $c.cover_url,
                barcode: ($c.barcode // $barcode), discid: $discid,
                artist: $c.artist, album: $c.album, year: ($c.date[0:4]),
                date: $c.date, country: $c.country, label: $c.label,
