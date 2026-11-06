@@ -55,6 +55,8 @@ echo "== 2. match: preview, wrong release rejected, then save"
 cdr match "$RIP" --barcode "$BARCODE" >"$T/m1.log" 2>&1
 check "match finds Night Lights"           grep -q 'Night Lights' "$T/m1.log"
 check "preview writes nothing"             test ! -f "$RIPDIR/release.json"
+cdr match "$RIP" --barcode "0$BARCODE" >"$T/m1b.log" 2>&1
+check "zero-padded barcode still matches"  grep -q 'Night Lights' "$T/m1b.log"
 cdr match "$RIP" --mb-release "$NUS_RELEASE" >"$T/m2.log" 2>&1
 check "release with other durations is rejected" grep -q 'duration' "$T/m2.log"
 cdr match "$RIP" --barcode "$BARCODE" --save >"$T/m3.log" 2>&1

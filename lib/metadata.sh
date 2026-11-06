@@ -77,8 +77,14 @@ mb_collect() { # out file, method
             fi
             resp="$(mb_get release --data-urlencode "query=$q" --data-urlencode "limit=10")" || return 0
             # The barcode search is fuzzy: keep only exact barcode matches.
+            # UPC-A/EAN-13/GTIN-14 are the same number padded with leading zeros
+            # to different lengths, so strip those before comparing. A release
+            # with no barcode field must not break the filter.
             ids="$(printf '%s' "$resp" | jq -r --arg b "$([[ $method == barcode ]] && printf '%s' "$ARG_BARCODE")" \
-                '.releases[]? | select($b == "" or .barcode == $b) | .id')"
+                '($b | sub("^0+"; "")) as $bn
+                 | .releases[]?
+                 | select($b == "" or ($bn != "" and ((.barcode // "") | sub("^0+"; "")) == $bn))
+                 | .id')"
             while IFS= read -r id; do
                 [[ -n "$id" ]] || continue
                 n=$((n + 1)); [[ $n -gt 8 ]] && break
