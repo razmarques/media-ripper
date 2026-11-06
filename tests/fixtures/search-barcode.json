@@ -1,0 +1,149 @@
+{
+ "created": "2026-11-06T09:38:49.284Z",
+ "count": 2,
+ "offset": 0,
+ "releases": [
+  {
+   "id": "00000000-0000-0000-0000-000000000000",
+   "title": "Edition without a barcode field",
+   "score": 100
+  },
+  {
+   "id": "b2c36d53-7454-4d03-91b7-a119a20af1cb",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "artist-credit-id": "13745104-9486-3a57-822b-ac1756eb6132",
+   "count": 1,
+   "title": "Night Lights",
+   "status": "Official",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Gerry Mulligan",
+     "artist": {
+      "id": "68f19808-1f7b-46d4-bd1d-71aaf0f6b267",
+      "name": "Gerry Mulligan",
+      "sort-name": "Mulligan, Gerry"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "5925a825-8e0e-3f35-a238-8f77db7229dd",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "Night Lights",
+    "primary-type": "Album"
+   },
+   "date": "1990",
+   "country": "DE",
+   "release-events": [
+    {
+     "date": "1990",
+     "area": {
+      "id": "85752fda-13c4-31a3-bee5-0e5cb1f51dad",
+      "name": "Germany",
+      "sort-name": "Germany",
+      "iso-3166-1-codes": [
+       "DE"
+      ]
+     }
+    }
+   ],
+   "barcode": "042281827129",
+   "asin": "B0000046PU",
+   "label-info": [
+    {
+     "catalog-number": "818 271-2",
+     "label": {
+      "id": "995428e7-81b6-41dd-bd38-5a7a0ece8ad6",
+      "name": "Mercury Records"
+     }
+    }
+   ],
+   "track-count": 7,
+   "media": [
+    {
+     "id": "c82ae6c2-3cdb-3c34-b263-f07ee14ce772",
+     "format": "CD",
+     "disc-count": 3,
+     "track-count": 7
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "jazz"
+    }
+   ]
+  },
+  {
+   "id": "bad6fc73-9514-41e7-b903-584953271cf3",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a",
+   "artist-credit-id": "13745104-9486-3a57-822b-ac1756eb6132",
+   "count": 1,
+   "title": "Night Lights",
+   "status": "Official",
+   "packaging": "Jewel Case",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Gerry Mulligan",
+     "artist": {
+      "id": "68f19808-1f7b-46d4-bd1d-71aaf0f6b267",
+      "name": "Gerry Mulligan",
+      "sort-name": "Mulligan, Gerry"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "5925a825-8e0e-3f35-a238-8f77db7229dd",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "Night Lights",
+    "primary-type": "Album"
+   },
+   "date": "",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "042281827129",
+   "label-info": [
+    {
+     "catalog-number": "818 271-2",
+     "label": {
+      "id": "99a24d71-54c1-4d3f-88cc-00fbcc4fce83",
+      "name": "Verve"
+     }
+    }
+   ],
+   "track-count": 7,
+   "media": [
+    {
+     "id": "a26fc1e5-97a1-4231-ac54-8ef15e406018",
+     "format": "CD",
+     "disc-count": 0,
+     "track-count": 7
+    }
+   ]
+  }
+ ]
+}

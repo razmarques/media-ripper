@@ -180,7 +180,8 @@ wording of its AccurateRip summary. Run `rip` once and inspect
 
 ```sh
 docker build -t media-ripper-cd:latest -f Containerfile.cd .
-tests/run.sh      # needs inputs/album: WAVs of Gerry Mulligan - Night Lights
+tests/run.sh      # offline: synthesised audio, stand-in cyanrip and curl,
+                  # recorded MusicBrainz responses in tests/fixtures/
 ```
 
 ## DVDs (`dvd-ripper.sh`)
@@ -199,5 +200,6 @@ tests/            tests/run.sh and a stand-in cyanrip
 Containerfile.cd  image for cd-ripper.sh
 dvd-ripper.sh     DVD ripping and encoding
 Containerfile     image for dvd-ripper.sh
-inputs/           WAV test albums (git-ignored)
+tests/            test suite, stand-in cyanrip / curl, fixtures (no audio)
+inputs/           your own WAV albums to import (git-ignored)
 ```

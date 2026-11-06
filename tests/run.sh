@@ -1,8 +1,9 @@
 #!/bin/bash
-# End-to-end checks for cd-ripper.sh, run in Docker with a stand-in cyanrip.
-# Needs: docker, the image built (tag below), and a folder of WAVs for the
-# Gerry Mulligan "Night Lights" CD (barcode 042281827129) in inputs/album.
-# Uses the network (MusicBrainz). The real drive path is NOT covered here.
+# End-to-end checks for cd-ripper.sh, run in Docker. Fully self-contained: the
+# audio is synthesised (sine tones, no files to commit), `cyanrip` is
+# tests/fake-cyanrip and `curl` is tests/fake-curl serving the recorded
+# MusicBrainz responses in tests/fixtures/. No network, no drive, no audio files.
+# The real drive path is NOT covered here.
 #
 #   docker build -t media-ripper-cd:latest -f Containerfile.cd .
 #   tests/run.sh
@@ -11,15 +12,13 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 IMAGE="${IMAGE:-media-ripper-cd:latest}"
-SRC="inputs/album"
-BARCODE="042281827129"
+BARCODE="042281827129"                               # Gerry Mulligan - Night Lights
+NIGHT_RELEASE="b2c36d53-7454-4d03-91b7-a119a20af1cb" # fixture whose track lengths we synthesise
 NUS_RELEASE="84a7f799-67f6-4f30-8230-a4d554d81a7f"   # Mão Morta - Nus (different durations)
-
-[[ -d "$SRC" ]] || { echo "SKIP: $SRC not found"; exit 0; }
 
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-OUT="$T/music"; mkdir -p "$OUT"
+OUT="$T/music"; IN="$T/in"; mkdir -p "$OUT" "$IN/album"
 FAIL=0
 
 pass() { echo "  ok   $*"; }
@@ -29,12 +28,27 @@ check() { # description, command...
     if "$@" >/dev/null 2>&1; then pass "$d"; else fail "$d"; fi
 }
 
+# MusicBrainz / Cover Art Archive stand-in, mounted over curl.
+FAKE_NET=(-e FIXTURES=/fixtures -v "$PWD/tests/fake-curl":/usr/local/bin/curl:ro -v "$PWD/tests/fixtures":/fixtures:ro)
+
+# Synthesise 7 mono 8 kHz tones with the track lengths of the Night Lights
+# fixture, so match validation (track count + durations) sees a real-looking disc.
+docker run --rm --entrypoint bash -v "$PWD/tests/fixtures":/fx:ro -v "$IN":/in "$IMAGE" -c '
+    i=0
+    while read -r secs; do
+        i=$((i + 1))
+        ffmpeg -nostdin -v error -y -f lavfi -i "sine=frequency=$((200 + i * 60)):sample_rate=8000:duration=$secs" \
+            -ac 1 -c:a pcm_s16le "/in/album/Track $i.wav"
+    done < <(jq -r ".media[0].tracks[] | (.length / 1000 | floor)" /fx/release-'"$NIGHT_RELEASE"'.json)
+    cp -R /in/album "/in/Gerry Mulligan - Night Lights [WAV]"' \
+    || { echo "could not synthesise test audio"; exit 1; }
+
 # cdr <args>: run the image with the fake cyanrip, our inputs and output.
 cdr() {
-    docker run --rm -e FAKE_SRC=/in/album -e CD_DRIVE_ID="TEST - DRIVE" -e CD_OFFSET=6 \
+    docker run --rm "${FAKE_NET[@]}" -e FAKE_SRC=/in/album -e CD_DRIVE_ID="TEST - DRIVE" -e CD_OFFSET=6 \
         -e FAKE_LOG=/music/fake-calls.log \
         -v "$PWD/tests/fake-cyanrip":/usr/local/bin/cyanrip:ro \
-        -v "$PWD/inputs":/in:ro -v "$OUT":/music "$IMAGE" "$@"
+        -v "$IN":/in:ro -v "$OUT":/music "$IMAGE" "$@"
 }
 # tool <cmd...>: run a tool from the image against $OUT.
 tool() { docker run --rm --entrypoint "$1" -v "$OUT":/music:ro "$IMAGE" "${@:2}"; }
@@ -53,6 +67,7 @@ check "rip never asked for a lookup"       bash -c "! grep -q 'MusicBrainz looku
 echo "== 2. match: preview, wrong release rejected, then save"
 cdr match "$RIP" --barcode "$BARCODE" >"$T/m1.log" 2>&1
 check "match finds Night Lights"           grep -q 'Night Lights' "$T/m1.log"
+check "edition without a barcode field did not break the search" grep -q 'Matched: Gerry Mulligan' "$T/m1.log"
 check "preview writes nothing"             test ! -f "$RIPDIR/release.json"
 cdr match "$RIP" --barcode "0$BARCODE" >"$T/m1b.log" 2>&1
 check "zero-padded barcode still matches"  grep -q 'Night Lights' "$T/m1b.log"
@@ -105,7 +120,7 @@ check "AAC gapless info survived"          bash -c "docker run --rm --entrypoint
 echo "== 5. update a plain library folder (no rip folder)"
 LIB="$OUT/lib"; mkdir -p "$LIB"; cp -R "$OUT/AAC/Gerry Mulligan Quartet - Night Lights" "$LIB/messy folder"
 for f in "$LIB/messy folder"/*.m4a; do mv "$f" "$LIB/messy folder/$(basename "$f" | sed 's/^\([0-9]*\) - .*/\1 x.m4a/')"; done
-docker run --rm -v "$OUT":/music "$IMAGE" update "/music/lib/messy folder" --barcode "$BARCODE" --artist "Gerry Mulligan" --apply >"$T/u3.log" 2>&1
+docker run --rm "${FAKE_NET[@]}" -v "$OUT":/music "$IMAGE" update "/music/lib/messy folder" --barcode "$BARCODE" --artist "Gerry Mulligan" --apply >"$T/u3.log" 2>&1
 check "library folder renamed from metadata" test -d "$LIB/Gerry Mulligan - Night Lights"
 check "library files renamed with titles"  bash -c "ls '$LIB/Gerry Mulligan - Night Lights'/01\ -\ Night*.m4a"
 
@@ -124,14 +139,14 @@ check "run matched and named by artist"    test -d "$OUT/FLAC/Gerry Mulligan - N
 
 echo "== 8. legacy call: WAV folder, no subcommand"
 rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
-docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$OUT":/music "$IMAGE" \
+docker run --rm --network none -v "$IN":/in:ro -v "$OUT":/music "$IMAGE" \
     -i "/in/Gerry Mulligan - Night Lights [WAV]" -f aac >"$T/l1.log" 2>&1
 check "flat Artist - Album folders"        test -d "$OUT/FLAC/Gerry Mulligan - Night Lights" -a -d "$OUT/AAC/Gerry Mulligan - Night Lights"
 check "Track NN names (no titles in files)" test -f "$OUT/AAC/Gerry Mulligan - Night Lights/Track 01.m4a"
 
 echo "== 9. multi-disc"
 rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
-docker run --rm --network none -v "$PWD/inputs":/in:ro -v "$OUT":/music "$IMAGE" \
+docker run --rm --network none -v "$IN":/in:ro -v "$OUT":/music "$IMAGE" \
     encode "/in/Gerry Mulligan - Night Lights [WAV]" --disc 2/3 >"$T/d1.log" 2>&1
 check "Disc suffix only on multi-disc"     test -d "$OUT/FLAC/Gerry Mulligan - Night Lights - Disc 2"
 

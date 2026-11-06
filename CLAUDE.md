@@ -76,8 +76,10 @@ Key ideas:
 - Disc commands need `--device` and network; WAV-folder runs can use
   `--network none`. Docker on macOS can't see the drive.
 - The container sets `LANG=C.UTF-8` (fdkaac mangles accents otherwise). `inputs/`
-  (WAV test albums) and `outputs/` are git-ignored test folders.
-- Tests: `tests/run.sh` (docker, stand-in `cyanrip`, network). **Not yet verified
+  and `outputs/` are git-ignored scratch folders for your own WAV albums and results.
+- Tests: `tests/run.sh` (docker; fully self-contained and offline: synthesised
+  audio, stand-in `cyanrip` and `curl`, recorded MusicBrainz JSON in
+  `tests/fixtures/`; no audio is ever committed). **Not yet verified
   on a real drive:** cyanrip's real `-N` output and log/cue names, whether
   `cyanrip -I` prints the disc ID, and its AccurateRip summary wording.
 
