@@ -93,18 +93,32 @@ apply_to_dir() { # dir
     # Keep extras/ in step with the new names (cue FILE lines, cover).
     [[ $APPLY -eq 1 ]] && refresh_extras "$dir"
 
-    newdir="$(dirname "$dir")/$(album_rel_dir)"
+    # A rip output moves to FLAC|AAC/Artist/Album[/Disc N]. A library folder is
+    # only ever renamed in place (we do not know where its Artist folder is).
+    local shown_old shown_new
+    if [[ "$SRC_KIND" == "library" ]]; then
+        newdir="$(dirname "$dir")/$(basename "$(album_rel_dir)")"
+        shown_old="$(basename "$dir")"; shown_new="$(basename "$newdir")"
+    else
+        old_rel="${dir#"$OUT_DIR"/}"
+        newdir="$OUT_DIR/${old_rel%%/*}/$(album_rel_dir)"
+        shown_old="$old_rel"; shown_new="${newdir#"$OUT_DIR"/}"
+    fi
     if [[ "$newdir" != "$dir" && "$SRC_KIND" == "library" && $RENAME_FOLDER -eq 0 ]]; then
-        echo "  folder kept: $(basename "$dir")   (add --rename-folder to rename it to $(basename "$newdir"))"
+        echo "  folder kept: $shown_old   (add --rename-folder to rename it to $shown_new)"
     elif [[ "$newdir" != "$dir" ]]; then
         if [[ -e "$newdir" ]]; then
-            echo "  folder rename SKIPPED: $(basename "$newdir") already exists"
+            echo "  folder rename SKIPPED: $shown_new already exists"
         else
-            echo "  folder: $(basename "$dir") -> $(basename "$newdir")"
+            echo "  folder: $shown_old -> $shown_new"
             if [[ $APPLY -eq 1 ]]; then
+                mkdir -p "$(dirname "$newdir")"
                 if mv "$dir" "$newdir"; then
-                    old_rel="${dir#"$OUT_DIR"/}"; new_rel="${newdir#"$OUT_DIR"/}"
-                    rip_json_rename_output "$old_rel" "$new_rel"
+                    if [[ "$SRC_KIND" != "library" ]]; then
+                        new_rel="${newdir#"$OUT_DIR"/}"
+                        rip_json_rename_output "$old_rel" "$new_rel"
+                        prune_empty_parents "$old_rel"
+                    fi
                 else
                     echo "  warning: could not rename the folder (is it a mount point? mount its parent instead)"
                 fi

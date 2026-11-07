@@ -63,9 +63,9 @@ Key ideas:
   keeps only `rip.json` / `release.json`. `--discard-master` removes ALL lossless
   audio and puts the reports in the AAC folder's `extras/rip/`. A later
   `encode --format aac` is built from the existing FLAC folder, never re-encoding it.
-- Output: separate trees `FLAC/Artist - Album/NN - Title.flac` and
-  `AAC/Artist - Album/…` (flat; ` - Disc N` only for multi-disc; year is tagged
-  not in the folder name). No match: `Unknown Artist - Unknown Album/Track NN`.
+- Output: separate trees `FLAC/Artist/Album/NN - Title.flac` and
+  `AAC/Artist/Album/…` (`/Disc N` subfolder only for multi-disc; year is tagged
+  not in the folder name). No match: `Unknown Artist/Unknown Album/Track NN`.
   Multi-disc needs `--disc N/TOTAL` unless one disc fits the durations.
 - Safety rules: inside a container `rip`/`encode`/`run` refuse to write to an
   unmounted output folder (`CD_ALLOW_EPHEMERAL=1` overrides); a WAV session is

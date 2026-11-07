@@ -98,11 +98,11 @@ AccurateRip drive database, then measured from the disc (cyanrip -f).
 Output:
   <out>/RIP/<id>/raw/                      the raw rip (removed after a verified encode)
   <out>/RIP/<id>/rip.json, release.json    small state files, kept
-  <out>/FLAC/Artist - Album/NN - Title.flac
-  <out>/FLAC/Artist - Album/extras/rip/    rip.log, rip.cue, ... (stored once, here)
-  <out>/FLAC/Artist - Album/extras/release/  cover.jpg
-  <out>/AAC/Artist - Album/NN - Title.m4a
-  Multi-disc: "Artist - Album - Disc 2".   Unknown: "Unknown Artist - Unknown Album".
+  <out>/FLAC/Artist/Album/NN - Title.flac
+  <out>/FLAC/Artist/Album/extras/rip/      rip.log, rip.cue, ... (stored once, here)
+  <out>/FLAC/Artist/Album/extras/release/  cover.jpg
+  <out>/AAC/Artist/Album/NN - Title.m4a
+  Multi-disc: Artist/Album/Disc 2/.   Unknown: Unknown Artist/Unknown Album/.
 
 Examples:
   $0 run --format aac --barcode 042281827129      # rip, match, encode

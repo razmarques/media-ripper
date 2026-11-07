@@ -15,7 +15,7 @@ deliverable_rel() { # top folder name: FLAC | AAC
     dir="$OUT_DIR/$rel"
     me="$(basename "$SESSION_DIR")"
     if [[ -f "$dir/$SESSION_MARKER" && "$(cat "$dir/$SESSION_MARKER")" != "$me" ]]; then
-        rel="$rel ($me)"
+        rel="$top/$(album_rel_dir " ($me)")"
     fi
     printf '%s' "$rel"
 }
@@ -30,6 +30,7 @@ clean_previous_outputs() { # format (flac|aac)
         [[ -n "$d" ]] || continue
         if [[ -f "$OUT_DIR/$d/$SESSION_MARKER" && "$(cat "$OUT_DIR/$d/$SESSION_MARKER")" == "$me" ]]; then
             rm -rf "${OUT_DIR:?}/$d"
+            prune_empty_parents "$d"
             echo "Removed previous output: $d"
         fi
         rip_json_remove_output "$d"
@@ -162,6 +163,7 @@ discard_master() {
     echo "=== Discarding the FLAC master (--discard-master) ==="
     rm -rf "${OUT_DIR:?}/$MASTER_REL"
     rip_json_remove_output "$MASTER_REL"
+    prune_empty_parents "$MASTER_REL"
     # Remove the now-empty FLAC/ folder, if it is.
     rmdir "$OUT_DIR/FLAC" 2>/dev/null || true
 }

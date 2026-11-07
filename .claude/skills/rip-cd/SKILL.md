@@ -60,7 +60,8 @@ Rules:
   and cue move to the AAC folder's `extras/rip/`. Use it only on an explicit
   request, with aac, and say that the lossless copy will be gone.
 - `update` on a library folder renames files but not the folder; add
-  `--rename-folder` only if the user wants the folder renamed.
+  `--rename-folder` only if the user wants the folder renamed (it renames that
+  folder only, never the Artist folder above it).
 - After a verified encode the raw rip audio is removed (`--keep-raw` keeps it);
   the FLAC folder holds the lossless master and `extras/rip/` the log and cue.
 - `--pick earliest` and `--allow-unverified` are the user's decisions: never add
@@ -133,8 +134,8 @@ or touch the input WAVs.
 
 ## Notes
 
-- Layout: `FLAC/Artist - Album/NN - Title.flac`, `AAC/Artist - Album/…m4a`;
-  multi-disc `… - Disc N`; no match `Unknown Artist - Unknown Album/Track NN`.
+- Layout: `FLAC/Artist/Album/NN - Title.flac`, `AAC/Artist/Album/…m4a`;
+  multi-disc `Artist/Album/Disc N/`; no match `Unknown Artist/Unknown Album/Track NN`.
   The year is tagged, not in the folder name.
 - Matching is checked against the real files (track count and durations within
   2 s), so a wrong edition is rejected rather than applied.

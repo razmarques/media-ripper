@@ -38,7 +38,8 @@ OFFSET_SOURCE=""
 FLAC_ARGS=(-8 -V -s -f)
 FDK_ARGS=(-m 5 -S)
 
-PLACEHOLDER_DIR="Unknown Artist - Unknown Album"
+PLACEHOLDER_ARTIST="Unknown Artist"
+PLACEHOLDER_ALBUM="Unknown Album"
 UA="media-ripper/1.0 (cd-ripper.sh)"
 MB_API="https://musicbrainz.org/ws/2"
 
@@ -154,18 +155,34 @@ is_multidisc() {
     return 1
 }
 
-# Single folder: "Artist - Album", plus " - Disc N" for multi-disc releases.
+# Album folder, relative to FLAC/ or AAC/: "Artist/Album", plus "/Disc N" for
+# multi-disc releases. $1 (optional) is appended to the album folder name, used
+# to keep two sessions with the same name apart.
 album_rel_dir() {
-    local name
+    local artist="" album=""
     if [[ -n "$ARTIST" && -n "$ALBUM" ]]; then
-        name="$(sanitize "$ARTIST") - $(sanitize "$ALBUM")"
-    else
-        name="$PLACEHOLDER_DIR"
+        artist="$(sanitize "$ARTIST")"
+        album="$(sanitize "$ALBUM")"
     fi
+    [[ -n "$artist" ]] || artist="$PLACEHOLDER_ARTIST"
+    [[ -n "$album" ]]  || album="$PLACEHOLDER_ALBUM"
+    local name="$artist/$album${1:-}"
     if is_multidisc; then
-        name="$name - Disc $((10#$DISC))"
+        name="$name/Disc $((10#$DISC))"
     fi
     printf '%s' "$name"
+}
+
+# Remove the empty parent folders of a relative path under OUT_DIR (the Artist
+# folder after its last album went away), but never the top FLAC/ or AAC/ one.
+prune_empty_parents() { # rel dir
+    local p
+    p="$(dirname "$1")"
+    while [[ "$p" == */* ]]; do
+        rmdir "$OUT_DIR/$p" 2>/dev/null || break
+        p="$(dirname "$p")"
+    done
+    return 0
 }
 
 # File base name (no extension) for track index $1.

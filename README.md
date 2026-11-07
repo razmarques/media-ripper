@@ -136,7 +136,7 @@ continues.
 |---|---|
 | `-f, --format flac\|aac` | Encode: `aac` also keeps the FLAC master (default `flac`) |
 | `--discard-master` | With `--format aac`, delete the FLAC afterwards. **Removes all lossless audio**; the rip log and cue move to the AAC folder's `extras/rip/` |
-| `--rename-folder` | `update` on a library folder: also rename the folder to `Artist - Album` (rip output folders are always renamed) |
+| `--rename-folder` | `update` on a library folder: also rename the folder to the new album name (or `Disc N`); the Artist folder above it is never touched. Rip outputs are always moved to the right `Artist/Album` |
 | `--keep-raw` | Keep `RIP/<id>/raw` after encoding (normally deleted once the verified FLAC exists) |
 | `-o, --out <dir>` | Output folder (default `/music` in the container) |
 | `-d, --device <path>` | Optical drive (default `/dev/sr0`) |
@@ -155,12 +155,12 @@ continues.
 ### Output
 
 ```
-FLAC/Artist - Album/01 - Title.flac
-FLAC/Artist - Album/extras/rip/       rip.log, rip.cue, cyanrip-output.txt, disc-info.txt
-FLAC/Artist - Album/extras/release/   cover.jpg (booklets you add go here too)
-AAC/Artist - Album/01 - Title.m4a
-FLAC/Artist - Album - Disc 2/...                  multi-disc releases only
-FLAC/Unknown Artist - Unknown Album/Track 01.flac no metadata found
+FLAC/Artist/Album/01 - Title.flac
+FLAC/Artist/Album/extras/rip/         rip.log, rip.cue, cyanrip-output.txt, disc-info.txt
+FLAC/Artist/Album/extras/release/     cover.jpg (booklets you add go here too)
+AAC/Artist/Album/01 - Title.m4a
+FLAC/Artist/Album/Disc 2/...                      multi-disc releases only
+FLAC/Unknown Artist/Unknown Album/Track 01.flac   no metadata found
 RIP/<id>/rip.json, release.json                    small state files
 RIP/<id>/raw/                                      the raw rip, only until the encode
 ```
