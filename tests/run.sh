@@ -255,5 +255,13 @@ EXTRA=()
 check "differently named log and cue reach extras/rip" test -f "$OUT/FLAC/Gerry Mulligan/Night Lights/extras/rip/weird.log" -a -f "$OUT/FLAC/Gerry Mulligan/Night Lights/extras/rip/weird.cue"
 check "nothing left behind in RIP/"              bash -c "! ls '$OUT'/RIP/*/raw 2>/dev/null"
 
+echo "-- files are handed back to the host user, not left root-owned"
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+EXTRA=(-e CD_OWNER=4242:4343)
+cdr run --format aac --barcode "$BARCODE" >"$T/o1.log" 2>&1
+EXTRA=()
+OWNERS="$(docker run --rm --entrypoint bash -v "$OUT":/m:ro "$IMAGE" -c 'find /m/RIP /m/FLAC /m/AAC -printf "%u:%g\n" | sort -u')"
+check "everything written is owned by CD_OWNER"  test "$OWNERS" = "4242:4343"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then echo "All checks passed."; else echo "$FAIL check(s) FAILED. Logs kept in $T"; trap - EXIT; exit 1; fi

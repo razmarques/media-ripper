@@ -71,7 +71,8 @@ Key ideas:
   unmounted output folder (`CD_ALLOW_EPHEMERAL=1` overrides); a WAV session is
   `RIP/<name>-<file fingerprint>`; a `release.json` that doesn't fit the files is
   ignored; `update` keeps each track's own ARTIST and leaves a library folder's
-  name alone unless `--rename-folder`; duplicate track numbers stop the run.
+  name alone unless `--rename-folder`; duplicate track numbers stop the run. At exit the container chowns what it wrote
+  (root-owned entries only) to the output folder's owner, or to `CD_OWNER=uid:gid`.
 - Ambiguous matches stop and list candidates; the user picks with `--mb-release`
   (`--discogs-release` for Discogs) or `--pick earliest`. Never guess a barcode, release ID or year.
 - **Drive offset is never assumed 0.** Order: `--offset`/`$CD_OFFSET` → saved

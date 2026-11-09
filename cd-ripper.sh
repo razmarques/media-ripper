@@ -106,6 +106,9 @@ Output:
 
 Examples:
   $0 run --format aac --barcode 042281827129      # rip, match, encode
+  CD_OWNER=uid:gid   (env) give the files written to this owner; default: the
+                     owner of the mounted output folder
+
   $0 rip                                          # just the disc
   $0 match /music/RIP/<id> --barcode 042281827129 # preview a match
   $0 update /music/RIP/<id> --barcode 042281827129 --apply

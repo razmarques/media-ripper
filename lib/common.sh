@@ -89,7 +89,28 @@ die() {
     exit 1
 }
 
+# The container runs as root, so everything it creates in the mounted output
+# folder would be root-owned on the host. Hand it back to the folder's owner
+# (or to $CD_OWNER=uid:gid). Only root-owned entries are touched, only in the
+# places this tool writes, so the owner's other files are never changed.
+fix_ownership() {
+    [[ "$(id -u)" == 0 && -d "$OUT_DIR" ]] || return 0
+    local owner="${CD_OWNER:-}" p
+    [[ -n "$owner" ]] || owner="$(stat -c '%u:%g' "$OUT_DIR" 2>/dev/null || true)"
+    [[ -n "$owner" && "$owner" != "0:0" ]] || return 0
+    for p in "$OUT_DIR/RIP" "$OUT_DIR/FLAC" "$OUT_DIR/AAC" "$OUT_DIR/.cd-ripper"; do
+        [[ "$p" == "$OUT_DIR"/* && -e "$p" ]] || continue
+        find "$p" \( -uid 0 -o -gid 0 \) -exec chown -h "$owner" {} + 2>/dev/null || true
+    done
+    # update on a library folder outside RIP/FLAC/AAC
+    if [[ "${SRC_KIND:-}" == "library" && -n "${SRC_DIR:-}" && -d "$SRC_DIR" ]]; then
+        find "$SRC_DIR" \( -uid 0 -o -gid 0 \) -exec chown -h "$owner" {} + 2>/dev/null || true
+    fi
+    return 0
+}
+
 cleanup() {
+    fix_ownership
     [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] && rm -rf "$WORK_DIR"
     return 0
 }

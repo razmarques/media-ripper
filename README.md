@@ -170,6 +170,13 @@ otherwise `rip`, `encode` and `run` stop, because everything would be lost when
 the container exits. `CD_ALLOW_EPHEMERAL=1` overrides that. A WAV folder's
 session is `RIP/<folder name>-<fingerprint of its files>`, so two different discs
 that both sit in a folder called `album` never share a release or outputs.
+
+**File ownership.** The container runs as root, but when it finishes it hands
+whatever it wrote (in `RIP/`, `FLAC/`, `AAC/`, or the library folder `update`
+worked on) back to the owner of the mounted output folder. Only root-owned
+entries are changed. If the output folder itself is root-owned (Docker created
+it because it did not exist), create it first with `mkdir -p`, or pass
+`-e CD_OWNER=$(id -u):$(id -g)`.
 A saved `release.json` that doesn't fit the files (track count or lengths) is
 ignored with a note.
 

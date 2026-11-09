@@ -92,7 +92,9 @@ docker run --rm [--network none] [--device=/dev/sr0] \
 - Folders inside the container: a WAV folder is `/in/<name>`; a rip folder or
   library folder is under `/music/...` (mount the **parent** of a folder you want
   renamed — a mount point itself cannot be renamed).
-- `mkdir -p` the output folder first so Docker doesn't create it as root.
+- `mkdir -p` the output folder first so Docker doesn't create it as root. The
+  script hands its files back to that folder's owner when it exits; if the
+  folder is root-owned anyway, add `-e CD_OWNER="$(id -u):$(id -g)"`.
 - **Discogs token:** if `DISCOGS_TOKEN` is set in the user's environment, add
   `-e DISCOGS_TOKEN` to `docker run` (never put the value on the command line).
   It is optional.
