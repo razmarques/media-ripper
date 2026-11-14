@@ -94,7 +94,7 @@ resolve_target() {
                 ;;
             *) die "Unknown source '$kind' in $t/rip.json" ;;
         esac
-    elif has_ext "$t" wav; then
+    elif [[ $FIX_MODE -eq 0 ]] && has_ext "$t" wav; then
         SRC_KIND="wav"; SRC_DIR="$t"
         # Name + a fingerprint of the files, so two different discs that both sit in a
         # folder called "album" never share a session (release.json, outputs).
@@ -105,6 +105,22 @@ resolve_target() {
         die "No audio files (.wav, .flac, .m4a) or rip.json found in $t"
     fi
     [[ -d "$SRC_DIR" ]] || die "Source folder not found: $SRC_DIR"
+    return 0
+}
+
+# Release IDs that other taggers leave in the files (Picard, beets, ...). They
+# identify the release exactly, so they are tried before any search. They are
+# only ever read: cd-ripper does not write or remove them.
+read_embedded_ids() { # first audio file
+    local f="$1" v
+    v="$(file_tag_any "$f" musicbrainz_albumid)"; v="${v%%;*}"
+    [[ "$v" =~ ^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$ ]] && FILE_MBID="$v"
+    v="$(file_tag_any "$f" barcode upc ean)"; v="${v%%;*}"; v="${v//[ -]/}"
+    [[ "$v" =~ ^[0-9]{8,14}$ ]] && FILE_BARCODE="$v"
+    v="$(file_tag_any "$f" musicbrainz_discid)"; v="${v%%;*}"
+    [[ "$v" =~ ^[A-Za-z0-9._-]{28}$ ]] && FILE_DISCID="$v"
+    v="$(file_tag_any "$f" discogs_release_id discogs_albumid discogs_release)"; v="${v%%;*}"; v="${v#discogs:}"
+    [[ "$v" =~ ^[0-9]+$ ]] && FILE_DGID="$v"
     return 0
 }
 
@@ -140,6 +156,10 @@ load_tracks() {
             parse_track_name "$(basename "$f")" "$idx"
             n="$P_NUM"
             [[ -z "$t" ]] && t="$P_TITLE"
+        elif [[ -z "$t" ]]; then
+            # numbered but untitled: a name like "03 - Title.flac" fills the gap
+            parse_track_name "$(basename "$f")" "$n"
+            t="$P_TITLE"
         fi
         TRACK_SRC+=("$f")
         TRACK_NUM+=("$((10#$n))")
@@ -186,6 +206,7 @@ load_tracks() {
                     ;;
             esac
             [[ "$FILE_YEAR" =~ ^[0-9]{4}$ ]] || FILE_YEAR=""
+            read_embedded_ids "$f"
         fi
     done
 
@@ -202,6 +223,7 @@ load_tracks() {
 
     # Raw rips live in a folder called "raw": nothing to learn from its name.
     [[ "$SRC_KIND" == "flac" ]] || parse_folder_name "$SRC_DIR"
+    [[ $FIX_MODE -eq 1 && "$SRC_KIND" == "library" ]] && parse_library_path "$SRC_DIR"
     [[ "$SRC_KIND" == "flac" ]] || find_cover "$SRC_DIR"
     return 0
 }

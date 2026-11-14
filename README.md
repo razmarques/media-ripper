@@ -16,6 +16,7 @@ match never means ripping the disc again.
 | `rip` | Reads the disc into `RIP/<id>/`: lossless FLAC, `rip.log`, `rip.cue`, `rip.json`. Does **no** lookup, so metadata can't make it fail. | the drive |
 | `match <folder>` | Finds the MusicBrainz release for a rip, a WAV folder or existing FLAC/M4A files, checks it against the real track count and durations, and shows a preview. `--save` writes `release.json`. | network |
 | `update <folder>` | Writes metadata (tags, cover art, file and folder names) into existing FLAC/M4A files **in place, without re-encoding**. Preview unless `--apply`. | none / network |
+| `fix <folder>` | Brings a **whole library folder** to the standard: each folder of FLAC/M4A files under it is one album, looked up and retagged / renamed exactly like `update --lookup`. Tags cd-ripper doesn't write (comments, ...) are left alone. Preview unless `--apply`. | network |
 | `encode <folder>` | Raw rip or WAV folder to a FLAC master and, with `--format aac`, AAC. Uses `release.json` if there is one. | none |
 | `run` | `rip` → `match` → `encode` in one go. Also what runs if you give no command. | the drive |
 
@@ -70,6 +71,33 @@ on **any folder of `.flac`/`.m4a` files**, such as an existing library:
 cdr update "/music/Some Artist - Some Album" --mb-release <id> --apply
 ```
 
+### Fixing a whole library
+
+```sh
+cdr fix /music/FLAC                 # preview: one block per album folder, then a summary
+cdr fix /music/FLAC --apply
+```
+
+`fix` walks every folder that holds `.flac`/`.m4a` files (skipping `RIP/` and
+`extras/`) and runs the same lookup as `update --lookup` on each, so the rules
+are the ones a fresh rip gets: `NN - Title` names, the tags cd-ripper owns
+(`TITLE`, `ARTIST`, `ALBUMARTIST`, `ALBUM`, `DATE` as a year, `TRACKNUMBER`,
+`TRACKTOTAL`, disc tags for multi-disc), and cover art for files that have none
+(existing artwork is never replaced). **Nothing else is touched**: comments,
+ReplayGain, release IDs and every other tag stay as they are, and files that
+already conform are not rewritten, so a second run changes nothing.
+
+When no release is found on MusicBrainz or Discogs, the artist and album come
+from the tags, then from the folder names (`Artist - Album`, or the library
+layout `Artist/Album[/Disc N]`) and the titles from the file names; those albums are marked
+*unverified* in the summary. An album that cannot be decided (several different
+releases fit, several discs fit, no artist/album to be found, FLAC and M4A mixed in
+one folder) is skipped and listed at the end (exit status 3); fix it with
+`update <folder> --mb-release <id> --apply` (or `--pick earliest`, `--disc N/TOTAL`,
+`--artist`/`--album`). `fix` takes none of those single-album flags itself. Folder names
+are only changed with `--rename-folder`, and only the album folder, never the Artist one
+above it.
+
 `update` keeps each track's own artist (compilations stay intact; with no album
 artist tag, differing track artists make the album "Various Artists"), and only
 changes what the metadata gives or you pass. On a library folder it renames the
@@ -91,10 +119,18 @@ folder is embedded.
 
 ### How matching works
 
-Order: `--mb-release` / `--discogs-release` → `--barcode` (exact; leading zeros
-don't matter) → the disc ID saved by `rip` → **Discogs by barcode** (only if
-MusicBrainz had nothing usable) → artist + album search (`--lookup`; `match` and `update` allow it by default when
-nothing better is given). Every candidate is **checked against your files**:
+MusicBrainz is authoritative; Discogs is only the second opinion; the names in
+the files are the last resort. Order: `--mb-release` (`--discogs-release`, if you
+name one, is honoured first) → `--barcode` (exact; leading zeros don't matter) →
+the disc ID saved by `rip` → artist + album search (`--lookup`; `match` allows it
+by default, and so does `fix`), first with the tags, then with the folder names,
+then tolerating typos → **Discogs** (the release number in the tags, then by
+barcode). Without any ID flag, the MusicBrainz release ID, barcode, disc ID or
+Discogs release number that other taggers left in the files' tags
+(`MUSICBRAINZ_ALBUMID`, `BARCODE`/`UPC`, `MUSICBRAINZ_DISCID`, `DISCOGS_RELEASE_ID`;
+the M4A spellings too) are tried before any search, so `update` and `fix` need
+no flags for such files. Those tags are only read, never written or removed.
+Every candidate is **checked against your files**:
 same track count and every track length within 2 s (5 s for Discogs, whose
 times are user-entered), so a different edition or
 album is rejected. If several editions fit and they are the same record (titles
@@ -149,7 +185,7 @@ continues.
 | `--artist`, `--album`, `--year` | Set directly; always win over what was found |
 | `--disc <n[/total]>` | Disc number for multi-disc releases, e.g. `2/3` |
 | `--save` | `match`: write `release.json` |
-| `--apply` | `update`: change files (default is a preview) |
+| `--apply` | `update`/`fix`: change files (default is a preview) |
 | `--offset <samples>`, `--find-offset`, `--allow-unverified` | Disc ripping, see above |
 
 ### Output
@@ -219,7 +255,7 @@ in `Containerfile`. Run `dvd-ripper.sh` with no arguments for usage. See
 ## Layout
 
 ```
-cd-ripper.sh      CD tool: rip / match / update / encode / run
+cd-ripper.sh      CD tool: rip / match / update / fix / encode / run
 lib/              its modules (offset, rip, metadata, encode, update, ...)
 tests/            tests/run.sh and a stand-in cyanrip
 Containerfile.cd  image for cd-ripper.sh

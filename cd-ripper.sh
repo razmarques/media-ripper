@@ -10,6 +10,7 @@
 #   rip     disc -> <out>/RIP/<id>/ (lossless, rip.log, rip.cue, no lookup)
 #   match   find the right release for a rip / folder; preview, --save it
 #   update  write metadata into existing FLAC/M4A files (no re-encode)
+#   fix     the same for a whole library folder, album by album
 #   encode  raw rip or WAV folder -> FLAC master and/or AAC
 #   run     rip -> match -> encode in one go (also the default)
 #
@@ -52,6 +53,14 @@ Commands:
                    and names (no re-encode). Works on a rip folder (changes its
                    encoded FLAC/AAC) or on any folder of .flac/.m4a files.
                    Preview unless --apply.
+  fix <folder>     Bring a whole library folder to the standard: every folder of
+                   .flac/.m4a files under it is one album, looked up (IDs in the
+                   tags, then searches; MusicBrainz first, Discogs second) and
+                   retagged / renamed like 'update --lookup'. With no release
+                   found, the tags and folder names are used (marked unverified).
+                   Comments and other tags cd-ripper does not write are kept.
+                   Albums that need a decision are listed at the end.
+                   Preview unless --apply.
   encode <folder>  Encode a rip folder or a folder of WAV files to FLAC and,
                    with --format aac, to AAC too. Uses release.json if present.
   run [folder]     rip -> match -> encode. With a WAV folder, skips the rip.
@@ -70,7 +79,9 @@ Options:
       --keep-raw             Keep RIP/<id>/raw after encoding (normally it is
                              removed once the verified FLAC master exists)
 
-  Metadata (flags always win over what was found):
+  Metadata (flags always win over what was found; with no ID flag, the
+  MusicBrainz release / barcode / disc ID or Discogs release left in the files'
+  tags by other taggers is used first):
       --mb-release <id>      Use exactly this MusicBrainz release
       --barcode <code>       Release by barcode (UPC/EAN, back of the case). If
                              MusicBrainz has no usable release, Discogs is tried
@@ -83,7 +94,7 @@ Options:
       --artist, --album, --year   Set these directly
       --disc <n[/total]>     Disc number for multi-disc releases, e.g. 2/3
       --save                 match: write release.json
-      --apply                update: really change files (default is a preview)
+      --apply                update/fix: really change files (default is a preview)
 
   Disc ripping:
       --offset <samples>     Drive read offset (else found automatically)
@@ -115,13 +126,15 @@ Examples:
   $0 encode /music/RIP/<id> --format aac
   $0 run "/in/Artist - Album [WAV]" --format aac --barcode 042281827129
   $0 update "/music/Some Artist - Some Album" --mb-release <id> --apply
+  $0 fix /music/FLAC                              # preview a whole library
+  $0 fix /music/FLAC --apply
 EOF
 }
 
 main() {
     local cmd="${1:-run}"
     case "$cmd" in
-        rip|match|update|encode|run) [[ $# -gt 0 ]] && shift ;;
+        rip|match|update|fix|encode|run) [[ $# -gt 0 ]] && shift ;;
         *) cmd="run" ;;   # legacy: no subcommand means run
     esac
 
@@ -142,6 +155,7 @@ main() {
             cmd_rip ;;
         match)  cmd_match ;;
         update) cmd_update ;;
+        fix)    cmd_fix ;;
         encode) cmd_encode ;;
         run)    cmd_run ;;
     esac

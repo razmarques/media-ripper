@@ -28,7 +28,14 @@ Docker only (no podman on this machine).
 | `rip` | Only read the disc (lossless, no lookup). |
 | `match <folder>` | Find / check the MusicBrainz release; preview, `--save` keeps it. |
 | `update <folder>` | **Metadata is wrong or missing on files that already exist.** Retags / renames in place, no re-rip and no re-encode. Preview unless `--apply`. |
+| `fix <folder>` | **Many albums with messy tags** (a whole library folder): looks every album folder up and conforms it to the cd-ripper standard. Preview unless `--apply`; takes no `--artist/--album/--barcode/...`. |
 | `encode <folder>` | Encode a rip folder or WAV folder (again). |
+
+For a whole library (or any folder tree of FLAC/M4A) run `fix <folder>` first
+without `--apply`, show the user the per-album preview and the summary, and apply
+only after they agree. Albums listed under "Need your decision" are resolved one by
+one with `update <album folder> --mb-release <id>` / `--pick earliest` / `--disc N/TOTAL`
+(only when the user chose); never guess an ID. Comments and other tags are kept.
 
 **Never re-rip a disc, and never re-encode, just to fix metadata.** If a rip
 exists in `<out>/RIP/<id>/`, fix it with `update` (or `match --save` then

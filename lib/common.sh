@@ -29,7 +29,9 @@ DISCARD_MASTER=0
 RENAME_FOLDER=0                   # update: also rename a library folder
 KEEP_RAW=0                        # keep RIP/<id>/raw after a verified encode
 SAVE=0                            # match: write release.json
-APPLY=0                           # update: really change files
+APPLY=0                           # update/fix: really change files
+FIX_MODE=0                        # fix: many albums, names are the last resort
+FIX_ROOT=""                       # fix: the library folder being walked
 
 OFFSET="${CD_OFFSET:-}"
 OFFSET_SOURCE=""
@@ -64,20 +66,25 @@ declare -A RJ_ARTIST_OF=()        # per-track artist from release.json, keyed by
 declare -A RJ_TITLE=()            # titles from release.json, keyed by track number
 
 FILE_ARTIST=""; FILE_ALBUM=""; FILE_YEAR=""; FILE_DISC=""; FILE_TOTAL_DISCS=""
+FILE_MBID=""; FILE_BARCODE=""; FILE_DISCID=""; FILE_DGID=""   # release IDs embedded in the tags
+PATH_ARTIST=""; PATH_ALBUM=""                                  # fix: guessed from the folder names
 RJ_ARTIST="";   RJ_ALBUM="";   RJ_YEAR="";   RJ_DISC="";   RJ_TOTAL_DISCS=""
 RJ_MBID="";     RJ_BARCODE=""; RJ_METHOD=""
 ARTIST=""; ALBUM=""; YEAR=""; DISC=""; TOTAL_DISCS=""
 COVER=""
+COVER_FETCHED=0                   # 1: COVER came from the release; only fill files that have none
 
 reset_state() {
     SESSION_DIR=""; SRC_KIND=""; SRC_DIR=""; RAW_GONE=0
     TRACK_SRC=(); TRACK_NUM=(); TRACK_DUR=(); FILE_TITLE=(); TRACK_TITLE=()
     RJ_TITLE=(); RJ_ARTIST_OF=(); FILE_TRACK_ARTIST=(); TRACK_ARTIST=()
     FILE_ARTIST=""; FILE_ALBUM=""; FILE_YEAR=""; FILE_DISC=""; FILE_TOTAL_DISCS=""
+    FILE_MBID=""; FILE_BARCODE=""; FILE_DISCID=""; FILE_DGID=""
+    PATH_ARTIST=""; PATH_ALBUM=""
     RJ_ARTIST="";   RJ_ALBUM="";   RJ_YEAR="";   RJ_DISC="";   RJ_TOTAL_DISCS=""
     RJ_MBID="";     RJ_BARCODE=""; RJ_METHOD=""
     ARTIST=""; ALBUM=""; YEAR=""; DISC=""; TOTAL_DISCS=""
-    COVER=""
+    COVER=""; COVER_FETCHED=0
 }
 
 # ============================================================================
@@ -105,6 +112,10 @@ fix_ownership() {
     # update on a library folder outside RIP/FLAC/AAC
     if [[ "${SRC_KIND:-}" == "library" && -n "${SRC_DIR:-}" && -d "$SRC_DIR" ]]; then
         find "$SRC_DIR" \( -uid 0 -o -gid 0 \) -exec chown -h "$owner" {} + 2>/dev/null || true
+    fi
+    # fix walks a whole library folder
+    if [[ -n "${FIX_ROOT:-}" && -d "$FIX_ROOT" ]]; then
+        find "$FIX_ROOT" \( -uid 0 -o -gid 0 \) -exec chown -h "$owner" {} + 2>/dev/null || true
     fi
     return 0
 }
@@ -135,6 +146,19 @@ flac_tag() {
 media_tag() {
     ffprobe -v error -show_entries "format_tags=$2" -of default=nw=1:nk=1 "$1" 2>/dev/null \
         | head -n 1 || true
+}
+
+# First tag found under any of the given names, for FLAC and M4A alike. Names
+# are compared ignoring case, spaces, '_' and '-', so "MusicBrainz Album Id"
+# (M4A) and MUSICBRAINZ_ALBUMID (FLAC) are the same name. Earlier names win.
+file_tag_any() { # file name...
+    local f="$1" names; shift
+    names="$(printf '%s\n' "$@" | jq -R 'ascii_downcase | gsub("[ _-]"; "")' | jq -s -c .)"
+    ffprobe -v error -show_entries format_tags -of json "$f" 2>/dev/null \
+        | jq -r --argjson n "$names" '
+            ((.format.tags // {}) | to_entries
+             | map({k: (.key | ascii_downcase | gsub("[ _-]"; "")), v: .value})) as $all
+            | ([$n[] as $name | $all[] | select(.k == $name) | .v][0] // "")' 2>/dev/null || true
 }
 
 # Duration of an audio file in seconds (float), empty on failure.
@@ -228,6 +252,36 @@ parse_folder_name() {
         [[ -z "$FILE_ARTIST" ]] && FILE_ARTIST="${name%% - *}"
         [[ -z "$FILE_ALBUM" ]]  && FILE_ALBUM="${name#* - }"
     fi
+    return 0
+}
+
+# fix: the last resort for artist and album is where the files sit. A folder
+# "Artist - Album" says both; "Artist/Album" (the library layout) says the
+# album, and the artist when that folder is inside the folder being walked. A
+# "Disc N" folder is looked through to the album above it.
+# Sets PATH_ARTIST / PATH_ALBUM, and FILE_DISC from a "Disc N" folder.
+parse_library_path() { # dir
+    local d="$1" name parent
+    name="$(basename "$d")"
+    if [[ "$name" =~ ^[Dd]is[ck][[:space:]_-]*([0-9]+)$ ]]; then
+        [[ -z "$FILE_DISC" ]] && FILE_DISC="$((10#${BASH_REMATCH[1]}))"
+        d="$(dirname "$d")"; name="$(basename "$d")"
+    fi
+    name="$(printf '%s' "$name" | sed -E 's/[[:space:]]*\[[^]]*\][[:space:]]*$//')"
+    if [[ "$name" == *" - "* ]]; then
+        PATH_ARTIST="${name%% - *}"; PATH_ALBUM="${name#* - }"
+    else
+        PATH_ALBUM="$name"
+        parent="$(dirname "$d")"
+        if [[ -n "$FIX_ROOT" && "$parent" == "$FIX_ROOT"/* ]]; then
+            case "$(basename "$parent")" in
+                FLAC|AAC|flac|aac) ;;
+                *) PATH_ARTIST="$(basename "$parent")" ;;
+            esac
+        fi
+    fi
+    [[ -n "$FILE_ARTIST" ]] || FILE_ARTIST="$PATH_ARTIST"
+    [[ -n "$FILE_ALBUM"  ]] || FILE_ALBUM="$PATH_ALBUM"
     return 0
 }
 

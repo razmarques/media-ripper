@@ -9,8 +9,18 @@
 #   0  one release chosen -> $WORK_DIR/chosen.json
 #   2  nothing usable found
 #   3  several different releases fit and none can be preferred
+#   4  the release is known but several of its discs fit (needs --disc)
+#
+# Order (the same for rips and for files already in a library):
+#   MusicBrainz first: --mb-release, --barcode, disc ID, then a text search
+#   (artist + album from the tags, from the folder names, then a typo-tolerant
+#   one). Discogs only after that: --discogs-release first, then by barcode.
+#   When nothing matches, the callers fall back to the names in the files.
+#   Without any ID flag, the IDs embedded in the first file's tags are used.
 
 ALLOW_TEXT=0                      # allow artist + album text search
+DG_ID=""                          # Discogs release being fetched (flag or tag)
+TAG_DGID=""                       # Discogs release ID found in the tags
 DURATION_TOLERANCE=2              # seconds, per track
 
 # Candidate evaluation, run with: --argjson n <tracks> --argjson d <disc, 0 =
@@ -118,6 +128,19 @@ dg_fetch_cover() { # image url, dest
 }
 
 
+# "Nite Lights" -> "Nite~ AND Lights~": every word of 4+ letters may be a few
+# letters off (Lucene fuzzy match), so a typo in the tags still finds the album.
+fuzzy_terms() { # text
+    local w out=""
+    for w in $1; do
+        w="${w//[^[:alnum:]]/}"
+        [[ -n "$w" ]] || continue
+        [[ ${#w} -gt 3 ]] && w="$w~"
+        out+="${out:+ AND }$w"
+    done
+    printf '%s' "$out"
+}
+
 # Append full release objects (one JSON per line) to file $1.
 mb_collect() { # out file, method
     local out="$1" method="$2" resp ids id n=0
@@ -130,8 +153,8 @@ mb_collect() { # out file, method
             mb_get "discid/$MB_DISCID" --data-urlencode "inc=$MB_INC" \
                 | jq -c '.releases[]?' >> "$out" || true
             ;;
-        dgid)
-            dg_get "releases/$ARG_DGID" | jq -c --arg b "$ARG_BARCODE" "$DG_TO_MB_JQ" >> "$out" || true
+        dgid|dgtag)
+            dg_get "releases/$DG_ID" | jq -c --arg b "$ARG_BARCODE" "$DG_TO_MB_JQ" >> "$out" || true
             ;;
         discogs)
             local bn="${ARG_BARCODE#"${ARG_BARCODE%%[!0]*}"}"
@@ -144,10 +167,12 @@ mb_collect() { # out file, method
                 dg_get "releases/$id" | jq -c --arg b "$ARG_BARCODE" "$DG_TO_MB_JQ" >> "$out" || true
             done <<< "$ids"
             ;;
-        barcode|search)
+        barcode|search|fuzzy)
             local q
             if [[ "$method" == "barcode" ]]; then
                 q="barcode:$ARG_BARCODE"
+            elif [[ "$method" == "fuzzy" ]]; then
+                q="artist:($(fuzzy_terms "$MB_ARTIST")) AND release:($(fuzzy_terms "$MB_ALBUM"))"
             else
                 q="artist:\"${MB_ARTIST//\"/}\" AND release:\"${MB_ALBUM//\"/}\""
             fi
@@ -189,6 +214,11 @@ mb_resolve() {
     rm -f "$WORK_DIR"/.rate-* "$WORK_DIR"/.failed-*
 
     need_tools curl jq
+    # Flags win. With no ID flag at all, use the release IDs embedded in the files.
+    if [[ -z "$ARG_MBID$ARG_DGID$ARG_BARCODE$ARG_DISCID" ]]; then
+        ARG_MBID="$FILE_MBID"; ARG_BARCODE="$FILE_BARCODE"; ARG_DISCID="$FILE_DISCID"
+        TAG_DGID="$FILE_DGID"
+    fi
     cands="$WORK_DIR/cands.ndjson"; evalf="$WORK_DIR/eval.ndjson"; ok="$WORK_DIR/ok.ndjson"
 
     MB_DISCID="${ARG_DISCID:-}"
@@ -198,13 +228,21 @@ mb_resolve() {
     MB_ARTIST="${ARG_ARTIST:-$FILE_ARTIST}"
     MB_ALBUM="${ARG_ALBUM:-$FILE_ALBUM}"
 
+    # MusicBrainz is authoritative; Discogs is only the second opinion.
     [[ -n "$ARG_MBID" ]]    && methods+=(mbid)
-    [[ -n "$ARG_DGID" ]]    && methods+=(dgid)
+    [[ -n "$ARG_DGID" ]]    && methods+=(dgid)          # asked for by name: honoured first
     [[ -n "$ARG_BARCODE" ]] && methods+=(barcode)
     [[ -n "$MB_DISCID" ]]   && methods+=(discid)
+    if [[ $ALLOW_TEXT -eq 1 && -n "$MB_ARTIST" && -n "$MB_ALBUM" ]]; then methods+=(search); fi
+    # The folder names, when they say something different from the tags.
+    if [[ $ALLOW_TEXT -eq 1 && -n "$PATH_ARTIST" && -n "$PATH_ALBUM" \
+          && ( "${PATH_ARTIST,,}" != "${MB_ARTIST,,}" || "${PATH_ALBUM,,}" != "${MB_ALBUM,,}" ) ]]; then
+        methods+=(pathsearch)
+    fi
+    if [[ $ALLOW_TEXT -eq 1 && -n "$MB_ARTIST" && -n "$MB_ALBUM" ]]; then methods+=(fuzzy); fi
+    [[ -n "$TAG_DGID" ]] && methods+=(dgtag)
     # Last resort for a barcode MusicBrainz cannot place: Discogs.
     [[ -n "$ARG_BARCODE" && -z "$ARG_DGID" ]] && methods+=(discogs)
-    if [[ $ALLOW_TEXT -eq 1 && -n "$MB_ARTIST" && -n "$MB_ALBUM" ]]; then methods+=(search); fi
     if [[ ${#methods[@]} -eq 0 ]]; then
         echo "No way to look the release up. Give --mb-release, --discogs-release, --barcode, --discid, or artist and album (--lookup)."
         return 2
@@ -212,24 +250,33 @@ mb_resolve() {
 
     durs="$(files_durations_json)"
 
+    local collect_as t_artist="$MB_ARTIST" t_album="$MB_ALBUM"
     for method in "${methods[@]}"; do
         : > "$cands"
+        collect_as="$method"
         case "$method" in
             mbid)    echo "Looking up release $ARG_MBID ..." ;;
             barcode) echo "Looking up barcode $ARG_BARCODE ..." ;;
             discid)  echo "Looking up disc ID $MB_DISCID ..." ;;
-            dgid)    echo "Looking up Discogs release $ARG_DGID ..." ;;
+            dgid)    DG_ID="$ARG_DGID"; echo "Looking up Discogs release $DG_ID ..." ;;
+            dgtag)   DG_ID="$TAG_DGID"; echo "Not found on MusicBrainz; trying the Discogs release in the tags ($DG_ID) ..." ;;
+            pathsearch)
+                MB_ARTIST="$PATH_ARTIST"; MB_ALBUM="$PATH_ALBUM"; collect_as=search
+                echo "Searching MusicBrainz for the folder names: $MB_ARTIST - $MB_ALBUM ..." ;;
+            fuzzy)   MB_ARTIST="$t_artist"; MB_ALBUM="$t_album"
+                     echo "Searching MusicBrainz, tolerating typos, for: $MB_ARTIST - $MB_ALBUM ..." ;;
             discogs) echo "Not usable on MusicBrainz; trying Discogs for barcode $ARG_BARCODE ..." ;;
-            search)  echo "Searching MusicBrainz for: $MB_ARTIST - $MB_ALBUM ..." ;;
+            search)  MB_ARTIST="$t_artist"; MB_ALBUM="$t_album"
+                     echo "Searching MusicBrainz for: $MB_ARTIST - $MB_ALBUM ..." ;;
         esac
-        mb_collect "$cands" "$method"
+        mb_collect "$cands" "$collect_as"
         n_failed="$(fetch_failures mb)"
         [[ "$n_failed" -gt 0 ]] && echo "  warning: $n_failed MusicBrainz request(s) failed after retries; the result may be incomplete."
         n_failed="$(fetch_failures dg)"
         [[ "$n_failed" -gt 0 ]] && echo "  warning: $n_failed Discogs request(s) failed after retries (rate limit? set DISCOGS_TOKEN); the result may be incomplete."
         [[ -s "$cands" ]] || { echo "  nothing returned."; continue; }
 
-        tol="$DURATION_TOLERANCE"; [[ "$method" == "discogs" || "$method" == "dgid" ]] && tol="$DISCOGS_DURATION_TOLERANCE"
+        tol="$DURATION_TOLERANCE"; [[ "$method" == "discogs" || "$method" == "dgid" || "$method" == "dgtag" ]] && tol="$DISCOGS_DURATION_TOLERANCE"
         jq -c --argjson n "$total" --argjson d "$d" --argjson durs "$durs" \
             --argjson tol "$tol" "$MB_EVAL_JQ" "$cands" > "$evalf"
         jq -c 'select(.status == "ok")' "$evalf" > "$ok"
@@ -238,7 +285,7 @@ mb_resolve() {
             if [[ -n "$(jq -r 'select(.status == "needs_disc") | .id' "$evalf")" ]]; then
                 echo "  Matching release has several discs that fit these files; pass --disc <n>."
                 print_candidates "$evalf"
-                return 2
+                return 4
             fi
             echo "  none of the ${method} results fit these files (track count $total, durations within ${tol}s):"
             print_candidates "$evalf"
@@ -251,7 +298,7 @@ mb_resolve() {
         if [[ "$groups" -gt 1 && -z "$ARG_PICK" ]]; then
             echo "  Several different releases fit these files:"
             print_candidates "$ok"
-            if [[ "$method" == "discogs" ]]; then
+            if [[ "$method" == "discogs" || "$method" == "dgtag" ]]; then
                 echo "  Pass --discogs-release <number after discogs:> to choose one, or --pick earliest."
             else
                 echo "  Pass --mb-release <id> to choose one, or --pick earliest."
@@ -263,7 +310,7 @@ mb_resolve() {
             sort_by(if .date == "" then "9999" else .date end)
             | . as $all | .[0] as $c
             | {version: 1, method: $method, mb_release: $c.id,
-               source: (if $method == "discogs" or $method == "dgid" then "discogs" else "musicbrainz" end),
+               source: (if $method == "discogs" or $method == "dgid" or $method == "dgtag" then "discogs" else "musicbrainz" end),
                cover_url: $c.cover_url,
                barcode: ($c.barcode // $barcode), discid: $discid,
                artist: $c.artist, album: $c.album, year: ($c.date[0:4]),

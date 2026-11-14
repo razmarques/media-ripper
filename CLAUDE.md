@@ -41,7 +41,8 @@ Same distrobox requirement as above.
 `cd-ripper.sh` has independent stages, run in its own image (`Containerfile.cd`:
 cyanrip, flac, fdkaac, AtomicParsley, ffmpeg, jq): `rip`, `match`, `update`,
 `encode`, and `run` (rip → match → encode; also the default with no command).
-Code is split into `lib/*.sh`. Use the **`rip-cd` skill** to run it.
+Code is split into `lib/*.sh`; `fix <folder>` applies `update --lookup` to every
+album folder under a library folder (see Key ideas). Use the **`rip-cd` skill** to run it.
 
 Key ideas:
 - `rip` writes `<out>/RIP/<id>/` (raw lossless FLAC + `rip.log` + `rip.cue` in
@@ -73,6 +74,16 @@ Key ideas:
   ignored; `update` keeps each track's own ARTIST and leaves a library folder's
   name alone unless `--rename-folder`; duplicate track numbers stop the run. At exit the container chowns what it wrote
   (root-owned entries only) to the output folder's owner, or to `CD_OWNER=uid:gid`.
+- Lookup order, for rips and library files alike: MusicBrainz is authoritative
+  (IDs/barcode/disc ID, then artist+album search from the tags, the folder names,
+  then typo-tolerant), Discogs only second (release number in the tags, then
+  barcode), and the names in the files/folders last (`fix` marks those
+  *unverified*). With no ID flag, release IDs left in the tags by other taggers
+  (`MUSICBRAINZ_ALBUMID`, `BARCODE`, `DISCOGS_RELEASE_ID`, ...) are used first.
+- `fix <folder>`: one `update --lookup` per album folder; same rules as a fresh
+  rip; only the tags cd-ripper owns are rewritten (comments etc. stay), files
+  that already conform are left untouched, existing artwork is never replaced;
+  undecidable albums are listed at the end (exit 3), never guessed.
 - Ambiguous matches stop and list candidates; the user picks with `--mb-release`
   (`--discogs-release` for Discogs) or `--pick earliest`. Never guess a barcode, release ID or year.
 - **Drive offset is never assumed 0.** Order: `--offset`/`$CD_OFFSET` → saved

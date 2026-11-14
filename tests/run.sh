@@ -155,7 +155,8 @@ check "library folder kept by default"     test -d "$LIB/messy folder"
 check "library folder renamed with --rename-folder (leaf only)" test -d "$LIB/Night Lights" -a ! -e "$LIB/Gerry Mulligan"
 
 echo "== 6. run with no match: encodes, never re-rips, prints the fix"
-rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"; : > "$OUT/fake-calls.log"
+rm -rf "$OUT/RIP" "$OUT/FLAC" "$OUT/AAC"
+docker run --rm --entrypoint sh -v "$OUT":/m "$IMAGE" -c ': > /m/fake-calls.log'   # root-owned: the host user cannot truncate it
 cdr run --format flac >"$T/r1.log" 2>&1
 check "placeholder folder used"            test -d "$OUT/FLAC/Unknown Artist/Unknown Album"
 check "Track NN names"                     test -f "$OUT/FLAC/Unknown Artist/Unknown Album/Track 01.flac"
@@ -262,6 +263,84 @@ cdr run --format aac --barcode "$BARCODE" >"$T/o1.log" 2>&1
 EXTRA=()
 OWNERS="$(docker run --rm --entrypoint bash -v "$OUT":/m:ro "$IMAGE" -c 'find /m/RIP /m/FLAC /m/AAC -printf "%u:%g\n" | sort -u')"
 check "everything written is owned by CD_OWNER"  test "$OWNERS" = "4242:4343"
+
+echo "== 12. fix: a whole library, album by album"
+# Four albums with the audio of the Night Lights fixture: A has MusicBrainz
+# IDs in its tags, B has typos and no ID, C matches nothing (4 tracks, no tags),
+# D is M4A with the ID. Every file carries a COMMENT that must survive.
+synth c 4 20
+FIXLIB="$OUT/fixlib"; rm -rf "$FIXLIB"
+docker run --rm --entrypoint bash -v "$IN":/in:ro -v "$OUT":/music -e REL="$NIGHT_RELEASE" "$IMAGE" -c '
+    set -e
+    mkflac() { # dir album artist [extra tag args...]
+        local dir="$1" album="$2" artist="$3" i; shift 3
+        mkdir -p "$dir"
+        for i in 1 2 3 4 5 6 7; do
+            flac -s -f -o "$dir/trk$i.flac" "/in/album/Track $i.wav" -T "TRACKNUMBER=$i" -T "TITLE=junk $i" \
+                 -T "ALBUM=$album" -T "ARTIST=$artist" -T "COMMENT=keep me" "$@"
+        done
+    }
+    mkflac "/music/fixlib/Gerry Mulligan/trk" "Wrong Name" "G. Mulligan" -T "MUSICBRAINZ_ALBUMID=$REL" -T "DATE=1962-01-01"
+    mkflac "/music/fixlib/Typo Artist/Nite Lightz" "Nite Lightz" "Gerry Mullligan"
+    mkdir -p "/music/fixlib/Some Artist/Some Album"
+    for i in 1 2 3 4; do
+        flac -s -f -o "/music/fixlib/Some Artist/Some Album/$i.flac" "/in/c/Track $i.wav" -T "COMMENT=hello"
+    done
+    mkdir -p "/music/fixlib/Mulligan M4A"
+    for i in 1 2 3 4 5 6 7; do
+        ffmpeg -nostdin -v error -y -i "/in/album/Track $i.wav" -c:a aac -movflags +use_metadata_tags \
+            -metadata "track=$i" -metadata "title=junk $i" -metadata "album=Nite Lights" -metadata "artist=Gerry Mulligan" \
+            -metadata "comment=keep me" -metadata "MusicBrainz Album Id=$REL" "/music/fixlib/Mulligan M4A/t$i.m4a"
+    done' >"$T/fx0.log" 2>&1
+check "test library built"                        test -f "$FIXLIB/Some Artist/Some Album/4.flac" -a -f "$FIXLIB/Mulligan M4A/t7.m4a"
+FXSUM="$(sums "$FIXLIB")"
+cdr fix /music/fixlib >"$T/fx1.log" 2>&1
+check "fix preview changes nothing"               test "$FXSUM" = "$(sums "$FIXLIB")"
+check "...and says so"                            grep -q 'Preview only' "$T/fx1.log"
+check "ID in the tags is used (no flags)"         grep -q "Looking up release $NIGHT_RELEASE" "$T/fx1.log"
+check "album with no ID is searched by its names" grep -q 'Searching MusicBrainz for: Gerry Mullligan - Nite Lightz' "$T/fx1.log"
+check "unmatched album falls back to the names"   grep -q 'unverified' "$T/fx1.log"
+check "summary counts the albums"                 grep -q '4 album folder(s): 3 matched on MusicBrainz, 0 on Discogs, 1 from the file/folder names' "$T/fx1.log"
+
+cdr fix /music/fixlib --apply >"$T/fx2.log" 2>&1
+fxtag() { tool metaflac --show-tag="$1" "/music/fixlib/$2"; }
+A="Gerry Mulligan/trk/01 - Night Lights (1963 version).flac"
+check "A: files renamed from the release"         test -f "$FIXLIB/$A"
+check "A: album fixed from the release"           bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ALBUM '/m/fixlib/$A' | grep -qx 'ALBUM=Night Lights'"
+check "A: artist fixed from the release"          bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ALBUMARTIST '/m/fixlib/$A' | grep -qx 'ALBUMARTIST=Gerry Mulligan'"
+check "A: date is the release year, not the old full date" bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=DATE '/m/fixlib/$A' | grep -qx 'DATE=1990'"
+check "A: track total filled in"                  bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=TRACKTOTAL '/m/fixlib/$A' | grep -qx 'TRACKTOTAL=7'"
+check "A: comment kept"                           bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=COMMENT '/m/fixlib/$A' | grep -qx 'COMMENT=keep me'"
+check "A: embedded release ID kept"               bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=MUSICBRAINZ_ALBUMID '/m/fixlib/$A' | grep -q $NIGHT_RELEASE"
+check "A: cover added where there was none"       bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --list --block-type=PICTURE '/m/fixlib/$A' | grep -q PICTURE"
+B="Typo Artist/Nite Lightz/01 - Night Lights (1963 version).flac"
+check "B: typos found and fixed"                  bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ALBUM '/m/fixlib/$B' | grep -qx 'ALBUM=Night Lights'"
+check "B: folder kept (no --rename-folder)"       test -d "$FIXLIB/Typo Artist/Nite Lightz"
+C="Some Artist/Some Album/Track 01.flac"
+check "C: renamed from nothing but the tracks"    test -f "$FIXLIB/$C"
+check "C: artist from the folder"                 bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ARTIST '/m/fixlib/$C' | grep -qx 'ARTIST=Some Artist'"
+check "C: album from the folder"                  bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=ALBUM '/m/fixlib/$C' | grep -qx 'ALBUM=Some Album'"
+check "C: comment kept"                           bash -c "docker run --rm --entrypoint metaflac -v '$OUT':/m:ro $IMAGE --show-tag=COMMENT '/m/fixlib/$C' | grep -qx 'COMMENT=hello'"
+check "D: M4A renamed from the release"           test -f "$FIXLIB/Mulligan M4A/01 - Night Lights (1963 version).m4a"
+check "D: M4A ID in the tags used"                bash -c "[ \$(grep -c \"Looking up release $NIGHT_RELEASE\" '$T/fx2.log') -eq 2 ]"
+check "D: M4A album fixed"                        bash -c "docker run --rm --entrypoint ffprobe -v '$OUT':/m:ro $IMAGE -v error -show_entries format_tags=album,comment -of default=nw=1 '/m/fixlib/Mulligan M4A/01 - Night Lights (1963 version).m4a' | grep -q 'album=Night Lights' "
+check "D: M4A comment kept"                       bash -c "docker run --rm --entrypoint ffprobe -v '$OUT':/m:ro $IMAGE -v error -show_entries format_tags=comment -of default=nw=1 '/m/fixlib/Mulligan M4A/01 - Night Lights (1963 version).m4a' | grep -q 'keep me'"
+check "D: M4A got a cover"                        bash -c "docker run --rm --entrypoint ffprobe -v '$OUT':/m:ro $IMAGE -v error -show_entries stream=codec_type -of csv=p=0 '/m/fixlib/Mulligan M4A/01 - Night Lights (1963 version).m4a' | grep -q video"
+
+echo "-- running fix again changes nothing"
+FXSUM2="$(sums "$FIXLIB")"
+cdr fix /music/fixlib --apply >"$T/fx3.log" 2>&1
+check "second run: nothing to change"             grep -q '0 file(s) changed' "$T/fx3.log"
+check "second run: files untouched"               test "$FXSUM2" = "$(sums "$FIXLIB")"
+
+echo "-- fix refuses single-album flags; ambiguous and unknown albums are listed, not guessed"
+cdr fix /music/fixlib --barcode "$BARCODE" >"$T/fx4.log" 2>&1
+check "fix takes no --barcode"                    grep -q 'fix works on many albums' "$T/fx4.log"
+mkdir -p "$FIXLIB/unknown"; cp "$FIXLIB/Some Artist/Some Album/Track 01.flac" "$FIXLIB/unknown/x.flac"
+docker run --rm --entrypoint bash -v "$OUT":/music "$IMAGE" -c 'metaflac --remove-tag=ARTIST --remove-tag=ALBUM --remove-tag=ALBUMARTIST /music/fixlib/unknown/x.flac' >/dev/null 2>&1
+cdr fix /music/fixlib >"$T/fx5.log" 2>&1
+check "album with nothing to go on is listed"     grep -q 'Need your decision (1)' "$T/fx5.log"
+rm -rf "$FIXLIB"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then echo "All checks passed."; else echo "$FAIL check(s) FAILED. Logs kept in $T"; trap - EXIT; exit 1; fi
